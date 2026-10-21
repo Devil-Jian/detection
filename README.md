@@ -8,7 +8,33 @@
 
 已支持从患者根目录 `/dataset/dataset/gx_all_registered/<patient_id>/` 自动读取 `ap_registered.nii.gz`、`pvp_registered.nii.gz`、`ncct_zcrop.nii.gz`，并分别从 `/dataset/detection/ap`、`/dataset/detection/pvp` 匹配NIfTI病灶伪标签。患者文件夹内的 `ap_mask_registered.nii.gz` / `pvp_mask_registered.nii.gz` **不会**被当成外部病灶标签。
 
-无需再提供 `--ncct-root`。具体示例、检查命令和伪标签命名规则见 **[实际服务器路径说明](docs/SERVER_LAYOUT.md)**。目前尚未核实伪标签实际文件名及其affine/shape，扫描与后续prepare均采用严格检查。若配准总队列大于检测队列，扫描器仅纳入AP和PVP两期均具有唯一外部伪标签的患者；两期均无伪标签的患者自动跳过，一期有标签另一期缺失则报错。
+无需再提供 `--ncct-root`。具体示例、检查命令和伪标签命名规则见 **[实际服务器路径说明](docs/SERVER_LAYOUT.md)**。已确认外部AP/PVP伪标签按 `<patient_id>.nii.gz` 平铺保存，例如 `A0_1004.nii.gz`。伪标签与影像的shape/affine及病灶内容仍需通过 `liverdet audit` 核验。若配准总队列大于检测队列，扫描器仅纳入AP和PVP两期均具有唯一外部伪标签的患者；两期均无伪标签的患者自动跳过，一期有标签另一期缺失则报错。
+
+
+### 扫描后先运行数据完整性检查
+
+已确认实际标签命名为：`/dataset/detection/ap/A0_1004.nii.gz`、`/dataset/detection/pvp/A0_1004.nii.gz`（其他患者同理）。**扫描后建议先运行audit，不要立刻大量提取2D数据。**
+
+~~~bash
+BASE=/dataset/downstream_detection
+liverdet scan \
+  --images /dataset/dataset/gx_all_registered \
+  --labels-ap /dataset/detection/ap \
+  --labels-pvp /dataset/detection/pvp \
+  --out "$BASE/manifests/cases.csv"
+
+# 检查文件存在、影像与伪标签shape/affine对应关系（仅读元数据，速度较快）
+liverdet audit --cases "$BASE/manifests/cases.csv" \
+  --out "$BASE/manifests/nifti_audit.csv"
+
+# 可选：读取伪Mask全体素，统计阳性切片和非零体素（时间更长）
+liverdet audit --cases "$BASE/manifests/cases.csv" \
+  --out "$BASE/manifests/nifti_audit_full.csv" --inspect-masks
+~~~
+
+当报告中含`status=error`时命令会报错，但检查CSV仍会保存以便定位失败患者。NCCT与配准后CECT不完全同网格只会提示warning，需在后续NCCT匹配阶段人工质控；**AP/PVP伪标签Mask与相应Real-CECT的shape/affine不一致属于error，必须先修复。** 伪标签中0病灶的层面不自动作为阴性。
+
+完整命名和检查说明：[docs/SERVER_LAYOUT.md](docs/SERVER_LAYOUT.md)。
 
 ## 0. 实施状态及安全边界
 
@@ -416,7 +442,7 @@ Val/Test必须完整保留实际临床阳性/阴性切片分布。若你只给�
 
 ## 12. 尚需确认的真实数据接口
 
-已确认NCCT与Real-AP/PVP同处gx_all_registered患者目录，伪标签为NIfTI格式。**尚未核实外部伪标签文件名、Mask数值语义及其是否与配准后的AP/PVP具有一致shape/affine。** 如果命名不同需扩展路径解析；如果空间不同需正确重采样。NCCT→CECT生成器接口及人工验证/测试真值也仍需提供。
+已确认NCCT与Real-AP/PVP同处gx_all_registered患者目录，伪标签为NIfTI格式。**已确认外部伪标签精确文件名为 `<patient_id>.nii.gz`；仍需核验Mask的数值语义以及是否与配准后的AP/PVP具有一致shape/affine。** 如果命名不同需扩展路径解析；如果空间不同需正确重采样。NCCT→CECT生成器接口及人工验证/测试真值也仍需提供。
 
 详细文档：[数据格式/标签/质控](docs/DATA_CONTRACT.md)｜[训练和评价](docs/MODELS_AND_EVALUATION.md)。
 
