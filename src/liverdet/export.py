@@ -167,7 +167,7 @@ def export_group(manifest: str, out_root: str, group: str, phase: str | None = N
                                        f"{(x2-x1)/width:.8f} {(y2-y1)/height:.8f}")
                 (label_dir/Path(basename).with_suffix(".txt").name).write_text(
                     "\n".join(yolo_labels)+("\n" if yolo_labels else ""),encoding="utf-8")
-        coco = dict(images=images,annotations=annotations,
+        coco = dict(info={"description":"Liver lesion detection, patient-separated"},licenses=[],images=images,annotations=annotations,
                     categories=[dict(id=1,name="liver_lesion",supercategory="lesion")])
         ann_path = base/"annotations"/f"{split}.json"
         ann_path.parent.mkdir(parents=True,exist_ok=True)
