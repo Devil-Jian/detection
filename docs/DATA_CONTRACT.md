@@ -5,13 +5,15 @@
 | 数据 | 当前已知真实路径 | 推荐格式 | 状态 |
 |---|---|---|---|
 | Real-AP/PVP | /dataset/dataset/gx_all_registered | 3D NIfTI .nii.gz | 用户提供 |
-| AP伪标签 | /dataset/detection/ap | 3D NIfTI Mask | 实际格式待确认 |
-| PVP伪标签 | /dataset/detection/pvp | 3D NIfTI Mask | 实际格式待确认 |
-| NCCT | 路径尚未提供 | 3D NIfTI | 需要补充 |
+| AP伪标签 | /dataset/detection/ap | NIfTI病灶Mask | 已确认NIfTI扩展名，具体文件名和Mask内容待核验 |
+| PVP伪标签 | /dataset/detection/pvp | NIfTI病灶Mask | 已确认NIfTI扩展名，具体文件名和Mask内容待核验 |
+| NCCT | /dataset/dataset/gx_all_registered/<patient_id>/ncct_zcrop.nii.gz | 3D NIfTI | 已确认路径 |
 | Syn-AP/PVP | 外部生成器产出 | 8-bit灰度PNG（与NCCT切片同网格） | 本仓库不包含生成模型 |
 
 **原始数据永不覆盖。** 处理结果默认保存在 /dataset/downstream_detection。
 CT像素强度需要先确认NIfTI的数值是不是HU。当前预处理假定HU，统一窗口[-100,300] HU并映射uint8。
+
+患者目录已确定为 `gx_all_registered/<patient_id>/`；真实AP与PVP分别为 `ap_registered.nii.gz`、`pvp_registered.nii.gz`，NCCT为 `ncct_zcrop.nii.gz`。患者文件夹内的 `ap_mask_registered.nii.gz` 等不是外部病灶伪标签目录。扫描会从 `/dataset/detection/ap`、`/dataset/detection/pvp` 严格匹配患者的NIfTI标签（平铺文件名或患者子目录）。详见 [实际服务器目录说明](SERVER_LAYOUT.md)。
 
 ## B. cases.csv 输入契约
 
