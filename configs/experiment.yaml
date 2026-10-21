@@ -2,6 +2,7 @@ paths:
   image_root: /dataset/dataset/gx_all_registered
   label_ap_root: /dataset/detection/ap
   label_pvp_root: /dataset/detection/pvp
+  # Flat exact pseudo-label filename: <patient_id>.nii.gz in each phase folder
   # NCCT is auto-discovered as image_root/<patient_id>/ncct_zcrop.nii.gz
   ncct_filename: ncct_zcrop.nii.gz
   workdir: /dataset/downstream_detection
