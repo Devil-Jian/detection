@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .inventory import scan_cases
+from .audit import audit_cases
 from .prepare import prepare_slices
 from .matching import match_ncct, apply_reviews, synthesis_requests, attach_synthetic
 from .export import export_group
@@ -24,6 +25,13 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--labels-pvp",required=True)
     s.add_argument("--ncct-root")
     s.add_argument("--out",required=True)
+
+    s=commands.add_parser("audit",help="Read-only NIfTI path, shape and affine audit before prepare")
+    s.add_argument("--cases",required=True)
+    s.add_argument("--out",required=True)
+    s.add_argument("--inspect-masks",action="store_true",
+                   help="Read full pseudo-mask volumes to count positive slices and check mask value ranges")
+    s.add_argument("--affine-tolerance",type=float,default=1e-3)
 
     s=commands.add_parser("prepare",help="NIfTI -> PNG + slice manifest")
     s.add_argument("--cases",required=True)
@@ -123,6 +131,9 @@ def main(argv: list[str] | None=None) -> None:
     if args.action=="scan":
         out=scan_cases(args.images,args.labels_ap,args.labels_pvp,args.out,args.ncct_root)
         print(f"Discovered {len(out)} phase cases. REVIEW cases.csv before preparing.")
+    elif args.action=="audit":
+        audit_cases(args.cases,args.out,inspect_masks=args.inspect_masks,
+                    affine_tolerance=args.affine_tolerance)
     elif args.action=="prepare":
         frame=prepare_slices(args.cases,args.workdir,split_csv=args.splits,
             trusted_negatives_csv=args.trusted_negatives,seed=args.seed,
