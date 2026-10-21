@@ -4,6 +4,39 @@
 
 > **实验定位**：约300例，2D单类别 liver_lesion，AP与PVP分别训练。增强相关组均在真实相应期相测试集评价；NCCT在相同测试患者的NCCT图像上评价。本仓库**不是**合成模型本体；使用已有NCCT→CECT模型输出合成图像后再接入。**未运行真实服务器数据训练**，须先核实你现有伪标签格式与几何空间。
 
+## 目标检测专用Case ID表：伪标签Train、人工标签Val/Test（优先使用）
+
+**优先使用新命令 liverdet build-cohorts，而不是scan扫描全部注册病例。** 你的病例清单含 452 名患者：344名pseudo_label（其余342名mask路径待补全）+108名ground_truth。此统计来自用户提供的列表，实际可用Train人数取决于服务器伪Mask是否齐全。
+
+~~~bash
+BASE=/dataset/downstream_detection
+mkdir -p "$BASE/manifests"
+
+# 请将私人Case ID CSV上传到服务器指定私有路径；不要上传完整名单到公开代码仓库。
+liverdet build-cohorts \
+  --case-list /dataset/detection/detection_case_ids.csv \
+  --workdir "$BASE" \
+  --labels-ap /dataset/detection/ap \
+  --labels-pvp /dataset/detection/pvp \
+  --val-fraction 0.5 --seed 42
+
+liverdet audit --cases "$BASE/manifests/cases.csv" \
+  --out "$BASE/manifests/nifti_audit.csv" --inspect-masks
+
+liverdet prepare --cases "$BASE/manifests/cases.csv" \
+  --splits "$BASE/manifests/splits.csv" --workdir "$BASE"
+~~~
+
+- TRAIN：仅纳入两期伪Mask完整的pseudo_label病例；仅训练用，不可进Val/Test。
+- VAL/TEST：108名ground_truth患者按患者划分54/54，读取患者目录中的ap_tumor_mask_registered.nii.gz和pvp_tumor_mask_registered.nii.gz。人工GT不会被伪标签替代。
+- 对pending，按患者ID尝试查找 /dataset/detection/ap/<patient_id>.nii.gz 和PVP对应文件。默认缺失报错；确认原因后才可加 --skip-missing-pseudo 排除缺失的Train病例。
+- 输出 cases.csv、splits.csv、cohort_inventory.csv。**完全不把地面真实标签用于student检测器训练**。
+- 如GT病例曾用于教师模型训练，必须重新核查教师-Student测试集独立性。
+
+**[查看详细病例划分及数据说明](docs/CASE_LIST_SPLIT.md)**。
+
+---
+
 ## 真实服务器目录已适配
 
 已支持从患者根目录 `/dataset/dataset/gx_all_registered/<patient_id>/` 自动读取 `ap_registered.nii.gz`、`pvp_registered.nii.gz`、`ncct_zcrop.nii.gz`，并分别从 `/dataset/detection/ap`、`/dataset/detection/pvp` 匹配NIfTI病灶伪标签。患者文件夹内的 `ap_mask_registered.nii.gz` / `pvp_mask_registered.nii.gz` **不会**被当成外部病灶标签。
