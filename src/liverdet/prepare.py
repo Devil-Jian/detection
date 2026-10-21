@@ -4,6 +4,8 @@ Coordinate convention:
     NIfTI arr[x,y,k] -> PNG arr[x,y,k].T (rows y, columns x).
     XYXY bbox coordinates in PNG pixel space.
 We never interpret missing pseudo detections as verified negatives.
+Only pseudo lesion masks are intersected with same-phase registered liver masks;
+manual ground truth is preserved exactly for validation and test.
 """
 from __future__ import annotations
 
@@ -93,6 +95,7 @@ def prepare_slices(cases_csv: str, workdir: str, *,
         verified = {(str(r.patient_id), str(r.phase), int(r.slice_index)) for r in neg.itertuples(index=False)}
 
     rows = []
+    liver_qc_rows = []
     for case in cases.itertuples(index=False):
         case_label = str(case.label_source)
         if case_label not in ("manual", "pseudo", "verified_negative"):
@@ -107,9 +110,48 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 raise ValueError(f"Image/mask geometry mismatch: {case.image_path} vs {case.mask_path}")
         elif case_label != "verified_negative":
             raise ValueError(f"Missing mask not trusted as negative: {case.patient_id}/{case.phase}")
+
+        # The files ap_mask_registered.nii.gz and pvp_mask_registered.nii.gz
+        # are LIVER masks. Never use them as lesion labels. Apply only to
+        # teacher pseudo-labels; preserve manual Val/Test GT unchanged.
+        liver = None
+        liver_path = Path(case.image_path).parent / f"{case.phase}_mask_registered.nii.gz"
+        before_voxels = after_voxels = 0
+        before_slices = after_slices = 0
+        if case_label == "pseudo":
+            if case.split != "train":
+                # Legacy scanner smoke tests may intentionally have pseudo
+                # validation labels; allow them to be prepared but exporters
+                # refuse such labels for paper evaluation.
+                pass
+            if not liver_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing {case.phase.upper()} liver mask for pseudo training case "
+                    f"{case.patient_id}: {liver_path}"
+                )
+            liver = nib.load(str(liver_path))
+            if len(liver.shape) != 3 or liver.shape != image.shape or not np.allclose(
+                liver.affine, image.affine, rtol=0, atol=1e-3
+            ):
+                raise ValueError(
+                    f"Liver mask geometry mismatch: {liver_path} vs {case.image_path}"
+                )
+
         for k in range(image.shape[2]):
-            boxes = [] if mask is None else boxes_from_mask(
-                np.asarray(mask.dataobj[:, :, k]).T, min_component_pixels)
+            lesion_slice = None if mask is None else np.asarray(mask.dataobj[:, :, k]) > 0
+            if liver is not None:
+                # Logical 3D intersection performed slice-wise on the same voxel grid.
+                liver_data = np.asarray(liver.dataobj[:, :, k])
+                if not np.isfinite(liver_data).all():
+                    raise ValueError(f"Nonfinite liver mask: {liver_path}, slice={k}")
+                positive = bool(lesion_slice.any())
+                before_voxels += int(lesion_slice.sum())
+                before_slices += int(positive)
+                lesion_slice = lesion_slice & (liver_data > 0)
+                after_voxels += int(lesion_slice.sum())
+                after_slices += int(lesion_slice.any())
+            boxes = [] if lesion_slice is None else boxes_from_mask(
+                lesion_slice.T, min_component_pixels)
             confirmed_negative = (
                 case_label in ("manual", "verified_negative")
                 or (str(case.patient_id), str(case.phase), k) in verified
@@ -125,10 +167,26 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 split=case.split, slice_index=k, real_path=str(out.resolve()),
                 boxes_real=boxes_dump(boxes), label_source=case_label if boxes else "manual" if confirmed_negative and case_label == "manual" else "verified_negative",
                 source_volume=str(Path(case.image_path).resolve()),
+                liver_mask_path=str(liver_path.resolve()) if liver is not None else "",
                 ncct_volume=str(Path(case.ncct_path).resolve()) if str(case.ncct_path).strip() else "",
                 ncct_slice="", ncct_path="", boxes_ncct="[]", match_nmi="",
                 match_offset_mm="", match_qc="unmatched", syn_path="", boxes_syn="[]"
             ))
+        if liver is not None:
+            liver_qc_rows.append(dict(
+                patient_id=case.patient_id, phase=case.phase, split=case.split,
+                pseudo_mask_path=str(Path(case.mask_path).resolve()),
+                liver_mask_path=str(liver_path.resolve()),
+                pseudo_voxels_before=before_voxels,
+                pseudo_voxels_inside_liver=after_voxels,
+                pseudo_voxels_removed=before_voxels - after_voxels,
+                positive_slices_before=before_slices,
+                positive_slices_after=after_slices,
+            ))
+    if liver_qc_rows:
+        qc_path = Path(workdir) / "manifests" / "liver_filter_qc.csv"
+        save_csv(pd.DataFrame(liver_qc_rows), qc_path)
+        print(f"Pseudo-label liver mask filtering QC: {qc_path}")
     if not rows:
         raise ValueError("No verified slices. Pseudo masks with no predictions cannot create negatives.")
     frame = pd.DataFrame(rows)
