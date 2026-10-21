@@ -94,8 +94,9 @@ def test_no_fuzzy_prefix_patient_mix(tmp_path):
     make_registered_root(root,"A0_10")
     for phase in ("ap","pvp"):
         write_nii(labels/phase/"A0_1.nii.gz")
-    with pytest.raises(ValueError, match="A0_10"):
-        scan_cases(str(root),str(labels/"ap"),str(labels/"pvp"),str(tmp_path/"cases.csv"))
+    frame = scan_cases(str(root),str(labels/"ap"),str(labels/"pvp"),str(tmp_path/"cases.csv"))
+    assert set(frame.patient_id) == {"A0_1"}
+    assert len(frame) == 2  # A0_10 must not borrow A0_1's labels
 
 
 def test_patient_folder_masks_not_auto_pseudolabels(tmp_path):
