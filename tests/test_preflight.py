@@ -27,9 +27,9 @@ def layout(tmp_path, ids=("A0_1004", "A0_1252")):
             nii(base/pid/f"{phase}_registered.nii.gz")
             nii(pseudo/phase/f"{pid}.nii.gz")
         nii(base/pid/"ncct_zcrop.nii.gz")
-        # Distractor anatomical masks are intentionally not labels.
-        nii(base/pid/"ap_mask_registered.nii.gz",shape=(2,2,2))
-        nii(base/pid/"pvp_mask_registered.nii.gz",shape=(2,2,2))
+        # Phase-matched liver ROI masks, distinct from external lesion pseudo labels.
+        nii(base/pid/"ap_mask_registered.nii.gz")
+        nii(base/pid/"pvp_mask_registered.nii.gz")
     cases=tmp_path/"cases.csv"
     frame=scan_cases(str(base),str(pseudo/"ap"),str(pseudo/"pvp"),str(cases))
     return base,pseudo,cases,frame
