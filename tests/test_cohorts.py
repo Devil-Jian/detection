@@ -30,6 +30,10 @@ def create_manifest(tmp_path, pseudo_ids=("A0_1004","A0_1252","A2_1"),
         create_nii(ap)
         create_nii(pvp)
         create_nii(folder/"ncct_zcrop.nii.gz")
+        if not gt:
+            # The registered organ masks are phase-specific LIVER ROI masks.
+            create_nii(folder/"ap_mask_registered.nii.gz")
+            create_nii(folder/"pvp_mask_registered.nii.gz")
         if gt:
             ap_mask=folder/"ap_tumor_mask_registered.nii.gz"
             pvp_mask=folder/"pvp_tumor_mask_registered.nii.gz"
