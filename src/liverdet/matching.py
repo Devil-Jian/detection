@@ -109,11 +109,11 @@ def match_ncct(manifest: str, workdir: str, *, radius_mm: float = 15,
         boxes = reproject_boxes(
             boxes_load(row.boxes_real), real.affine, k, ncct.affine,
             ncct.shape[0], ncct.shape[1])
-        df.at[i,"ncct_slice"] = j
+        df.at[i,"ncct_slice"] = str(j)
         df.at[i,"ncct_path"] = str(out.resolve())
         df.at[i,"boxes_ncct"] = boxes_dump(boxes)
-        df.at[i,"match_nmi"] = round(raw_nmi,6)
-        df.at[i,"match_offset_mm"] = round(offset,3)
+        df.at[i,"match_nmi"] = str(round(raw_nmi,6))
+        df.at[i,"match_offset_mm"] = str(round(offset,3))
         df.at[i,"match_qc"] = "pending"  # Never auto-pass based on similarity alone.
     save_csv(df, manifest)
     return df
