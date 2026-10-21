@@ -1,4 +1,4 @@
-"""Read-only audit of actual AP/PVP pseudo-label paths and NIfTI geometry.
+"""Read-only audit of AP/PVP lesion labels and phase-specific liver mask geometry.
 
 Audit runs before slice extraction, writes a CSV even when errors exist, and
 NEVER assumes pseudo-mask zeros are verified negative slices.
@@ -56,8 +56,11 @@ def audit_cases(cases_csv: str, output_csv: str, *,
         pid, phase = str(row.patient_id), str(row.phase)
         if pid in bad_patients:
             problems.append("incomplete_phase_pair")
-        image, mask, ncct = None, None, None
-        shape_image = shape_mask = shape_ncct = ""
+        image, mask, ncct, liver = None, None, None, None
+        is_pseudo = str(getattr(row, "label_source", "")).strip() == "pseudo"
+        liver_path = str(Path(str(row.image_path)).parent / f"{phase}_mask_registered.nii.gz") if is_pseudo else ""
+        shape_image = shape_mask = shape_ncct = liver_shape = ""
+        liver_affine_diff = outside_liver_voxels = inside_liver_voxels = ""
         affine_max_diff = ""
         nonzero_voxels = positive_slices = ""
         mask_min = mask_max = ""
@@ -78,6 +81,21 @@ def audit_cases(cases_csv: str, output_csv: str, *,
                     shape_ncct = _format_shape(volume.shape)
             except Exception as exc:
                 problems.append(f"{field}:{type(exc).__name__}:{exc}")
+
+        # Check the same-phase registered liver mask ONLY for pseudo cases.
+        # Ground-truth Val/Test lesions must not be liver-mask filtered.
+        if is_pseudo:
+            try:
+                liver = _load_3d(liver_path)
+                liver_shape = _format_shape(liver.shape)
+                if image is not None:
+                    if image.shape != liver.shape:
+                        problems.append("real_vs_liver_shape_mismatch")
+                    liver_affine_diff = float(np.max(np.abs(image.affine - liver.affine)))
+                    if liver_affine_diff > affine_tolerance:
+                        problems.append("real_vs_liver_affine_mismatch")
+            except Exception as exc:
+                problems.append(f"liver_mask:{type(exc).__name__}:{exc}")
 
         if image is not None and mask is not None:
             if image.shape != mask.shape:
@@ -104,6 +122,15 @@ def audit_cases(cases_csv: str, output_csv: str, *,
                 nonzero_voxels = int(np.count_nonzero(nz))
                 positive_slices = int(np.count_nonzero(nz.any(axis=(0, 1))))
                 mask_min, mask_max = float(clean.min()), float(clean.max())
+                if is_pseudo and liver is not None and mask.shape == liver.shape:
+                    liver_data = np.asarray(liver.dataobj)
+                    if not np.isfinite(liver_data).all():
+                        problems.append("liver_mask_nonfinite")
+                    inside = nz & (liver_data > 0)
+                    inside_liver_voxels = int(np.count_nonzero(inside))
+                    outside_liver_voxels = int(nonzero_voxels - inside_liver_voxels)
+                    if outside_liver_voxels:
+                        warnings.append("pseudo_lesions_outside_liver_will_be_filtered")
                 if nonzero_voxels == 0:
                     warnings.append("pseudo_mask_empty_not_verified_negative")
                 if mask_min < 0:
@@ -120,6 +147,10 @@ def audit_cases(cases_csv: str, output_csv: str, *,
             "image_path": str(row.image_path),
             "mask_path": str(row.mask_path),
             "ncct_path": str(row.ncct_path),
+            "liver_mask_path": liver_path, "liver_shape": liver_shape,
+            "liver_affine_max_abs_diff": liver_affine_diff,
+            "pseudo_voxels_inside_liver": inside_liver_voxels,
+            "pseudo_voxels_outside_liver": outside_liver_voxels,
             "real_shape": shape_image, "mask_shape": shape_mask,
             "ncct_shape": shape_ncct, "affine_max_abs_diff": affine_max_diff,
             "pseudo_nonzero_voxels": nonzero_voxels,

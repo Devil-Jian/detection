@@ -126,3 +126,15 @@ P001_ap_0042,P001,ap,/dataset/downstream_detection/data/ncct/P001/0044.png,/data
 - 不允许将生成器见过的患者作为独立下游泛化测试样本却不说明。
 - 不允许因为某些Syn未生成而悄悄删除REAL训练患者；组间对比应同人同位置。
 - 不允许将2D slice-FROC自动称为3D lesion-FROC。
+
+
+## J. 同期相Liver Mask对伪标签的空间过滤
+
+注册目录下的ap_mask_registered.nii.gz和pvp_mask_registered.nii.gz是**肝脏ROI分割**，不等于肿瘤伪标签。
+
+- Train伪标签：先检查对应期相Real CT、外部伪标签和Liver Mask的shape/affine匹配；逐体素AND得到肝内病灶伪标签，再提取2D BBox。
+- Val/Test：人工Tumor Mask不得用Liver Mask过滤，避免删掉真实肝边缘病灶。
+- 被肝脏ROI过滤至零的伪标签切片不自动变成阴性。
+- liverdet audit检查Liver Mask与空间对应，liverdet prepare输出liver_filter_qc.csv统计删除体素数。
+
+完整规则详见[LIVER_PSEUDO_FILTER.md](LIVER_PSEUDO_FILTER.md)。

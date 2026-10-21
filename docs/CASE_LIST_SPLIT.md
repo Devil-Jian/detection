@@ -109,3 +109,7 @@ liverdet prepare --cases "$BASE/manifests/cases.csv" \
 3. Val/Test中不得用教师伪标签替代缺失人工GT。
 4. 不得把GT的病灶Mask输入被评估模型作为推理提示。
 5. 保存完整cohort_inventory.csv、splits.csv、mask几何检查报告及各次模型训练配置。
+
+## 6. Liver Mask过滤（仅Train伪标签）
+
+AP、PVP注册图像各有对应Liver Mask：ap_mask_registered.nii.gz、pvp_mask_registered.nii.gz。构建Train检测框时，先将外部病灶伪Mask与同期相Liver Mask取体素交集，仅保留肝内预测；Val/Test人工真实肿瘤Mask完全不裁剪。liverdet audit会提前检查两个Liver Mask，prepare写入liver_filter_qc.csv用于排查错删病例。详见[LIVER_PSEUDO_FILTER.md](LIVER_PSEUDO_FILTER.md)。
