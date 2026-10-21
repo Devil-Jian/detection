@@ -90,7 +90,7 @@ def assert_manual_eval(frame: pd.DataFrame, allow_pseudo: bool = False) -> None:
     if allow_pseudo:
         return
     eval_rows = frame[frame.split.isin(["val", "test"])]
-    bad = eval_rows[eval_rows.label_source != "manual"]
+    bad = eval_rows[~eval_rows.label_source.isin(["manual", "verified_negative"])]
     if not bad.empty:
         raise ValueError(
             f"{len(bad)} validation/test slices are not manually annotated. "
