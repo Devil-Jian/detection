@@ -4,6 +4,21 @@
 
 > **实验定位**：约300例，2D单类别 liver_lesion，AP与PVP分别训练。增强相关组均在真实相应期相测试集评价；NCCT在相同测试患者的NCCT图像上评价。本仓库**不是**合成模型本体；使用已有NCCT→CECT模型输出合成图像后再接入。**未运行真实服务器数据训练**，须先核实你现有伪标签格式与几何空间。
 
+## 训练伪标签：按 AP/PVP 的 Liver Mask 过滤（已实现）
+
+真实注册患者目录中的 ap_mask_registered.nii.gz 与 pvp_mask_registered.nii.gz **是 Liver Mask**，不是肿瘤Mask。针对 Train 的伪标签，提取2D框之前必需执行：
+
+    AP: (/dataset/detection/ap/<patient_id>.nii.gz > 0)
+        AND (<registered>/<patient_id>/ap_mask_registered.nii.gz > 0)
+    PVP: (/dataset/detection/pvp/<patient_id>.nii.gz > 0)
+        AND (<registered>/<patient_id>/pvp_mask_registered.nii.gz > 0)
+
+Val/Test 的人工肿瘤真值不做 Liver Mask 过滤；肝外伪阳性被删除后，不自动转成训练阴性。Liver Mask缺失或与对应Real CT尺寸/Affine不一致会报错。liverdet audit检查肝脏Mask并统计肝外伪标签；liverdet prepare真正过滤并生成 liver_filter_qc.csv。
+
+详细步骤：[docs/LIVER_PSEUDO_FILTER.md](docs/LIVER_PSEUDO_FILTER.md)。
+
+---
+
 ## 目标检测专用Case ID表：伪标签Train、人工标签Val/Test（优先使用）
 
 **优先使用新命令 liverdet build-cohorts，而不是scan扫描全部注册病例。** 你的病例清单含 452 名患者：344名pseudo_label（其余342名mask路径待补全）+108名ground_truth。此统计来自用户提供的列表，实际可用Train人数取决于服务器伪Mask是否齐全。
@@ -73,7 +88,7 @@ liverdet audit --cases "$BASE/manifests/cases.csv" \
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| NIfTI图像+NIfTI伪Mask→2D PNG/BBox | 已实现 | Mask必须与对应期相图像shape和affine一致 |
+| NIfTI图像+NIfTI伪Mask→2D PNG/BBox | 已实现 | 伪标签先与同期相Liver Mask求交集，之后转换BBox；GT不裁剪 |
 | 病例扫描和患者级拆分 | 已实现 | 自动扫描只对常见命名有效；不符请手工准备cases.csv |
 | 可靠阳性/阴性采样 | 已实现 | 未检出的伪标签空层不当作阴性 |
 | NCCT受限相似性匹配 | 已实现初版 | 物理位置+局部全图NMI；结果**必须人工审核**；尚未实现肝脏ROI/序列动态规划 |
