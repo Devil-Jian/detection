@@ -77,8 +77,7 @@ docs/MODELS_AND_EVALUATION.md        # 三检测器、实验矩阵、指标说�
 ~~~bash
 git clone https://github.com/Devil-Jian/detection.git
 cd detection
-# 合并PR后在main使用；合并前：
-git checkout feat/cect-detection-pipeline
+# 当前代码已合并到main；无需切换旧开发分支。
 
 python -m venv .venv
 source .venv/bin/activate
@@ -157,11 +156,10 @@ liverdet scan \
   --images /dataset/dataset/gx_all_registered \
   --labels-ap /dataset/detection/ap \
   --labels-pvp /dataset/detection/pvp \
-  --ncct-root /你的/NCCT目录 \
   --out /dataset/downstream_detection/manifests/cases.csv
 ~~~
 
-自动扫描的病例和期相推断是**保守启发式**。如果一个患者多份序列、非标准期相文件名或伪标签与影像目录嵌套方式不同，请手工修改cases.csv。无法唯一关联的文件会报错，不能忽略。
+自动扫描严格读取每位患者的ap_registered.nii.gz、pvp_registered.nii.gz、ncct_zcrop.nii.gz，并按相同patient_id读取外部病灶伪标签（如A0_1004.nii.gz）。无法唯一关联的文件会报错，不能忽略。
 
 ### 4.2 手工病例CSV（更稳妥，推荐）
 
