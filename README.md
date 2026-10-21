@@ -413,3 +413,30 @@ Val/Test必须完整保留实际临床阳性/阴性切片分布。若你只给�
 构建器支持规范化的Mask NIfTI输入；**尚无法直接确认你现有 /dataset/detection/ap 和 /dataset/detection/pvp 具体是什么格式**。请在服务器提供最小文件清单、NCCT路径和生成模型调用方式后，再适配真实数据。若伪标签不是Mask NIfTI，当前scan/prepare不能直接解析它们；这属于下一步必须完成的输入适配，而不是声称支持所有格式。
 
 详细文档：[数据格式/标签/质控](docs/DATA_CONTRACT.md)｜[训练和评价](docs/MODELS_AND_EVALUATION.md)。
+
+
+## 13. 批量运行27组（先dry-run，后正式）
+
+完成九个数据导出后：
+
+~~~bash
+BASE=/dataset/downstream_detection
+
+# 仅预览YOLOv8s的9组，不训练：
+python scripts/run_matrix.py \
+  --exports "$BASE/exports" --runs "$BASE/runs" --results "$BASE/results" \
+  --models yolov8s --dry-run
+
+# 正式顺序运行YOLOv8s的9组，断点续跑：
+python scripts/run_matrix.py \
+  --exports "$BASE/exports" --runs "$BASE/runs" --results "$BASE/results" \
+  --models yolov8s --steps 2000 --batch 8 --device 0 --skip-completed
+
+# 完整27组（需要先安装官方RT-DETR及相关环境）：
+python scripts/run_matrix.py \
+  --exports "$BASE/exports" --runs "$BASE/runs" --results "$BASE/results" \
+  --rtdetr-repo /dataset/external/RT-DETR \
+  --steps 2000 --batch 8 --device 0 --skip-completed
+~~~
+
+脚本自动从每次训练写出的best_checkpoint.txt读取最优Checkpoint，完成预测及统一评价，并输出 experiment_manifest.csv。当前为**顺序训练**，适合单GPU/独立任务队列；多GPU可在不同进程用--models筛选，务必保证输出目录不冲突。真实数据未经验证前先用 --dry-run 检查所有配置。
