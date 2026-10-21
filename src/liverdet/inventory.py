@@ -135,15 +135,20 @@ def scan_cases(
             for phase, filenames in PHASE_FILES.items()
         }
         if not any(phase_images.values()):
-            # Ignore non-patient folders, but never accept a mask as an image.
+            # Ignore unrelated folders; only exact registered CT filenames count.
+            continue
+        label_matches = {
+            phase: _label_candidates(pid, label_roots[phase], label_files[phase])
+            for phase in PHASE_FILES
+        }
+        if not any(label_matches.values()):
+            # Registered cohort may be much larger than the detection cohort.
+            # Neither phase annotated => patient is outside the detection set.
             continue
         missing_phases = [phase for phase, path in phase_images.items() if path is None]
         if missing_phases:
-            raise FileNotFoundError(f"{pid}: missing registered phase(s): {missing_phases}")
-        ncct = _find_exact_file(folder, NCCT_FILES, required=True)
-        for phase, image_path in phase_images.items():
-            assert image_path is not None
-            matches = _label_candidates(pid, label_roots[phase], label_files[phase])
+            raise FileNotFoundError(f"{pid}: has detection labels but missing registered phase(s): {missing_phases}")
+        for phase, matches in label_matches.items():
             if len(matches) != 1:
                 raise ValueError(
                     f"{pid}/{phase}: expected exactly one tumor pseudo-label NIfTI under "
@@ -151,6 +156,10 @@ def scan_cases(
                     "Check flat filenames or nested patient folders; "
                     "do NOT substitute ap_mask_registered/pvp_mask_registered."
                 )
+        ncct = _find_exact_file(folder, NCCT_FILES, required=True)
+        for phase, image_path in phase_images.items():
+            assert image_path is not None
+            matches = label_matches[phase]
             rows.append({
                 "patient_id": pid,
                 "phase": phase,
@@ -167,4 +176,8 @@ def scan_cases(
         )
     frame = pd.DataFrame(rows).sort_values(["patient_id", "phase"]).reset_index(drop=True)
     save_csv(frame, out)
+    print(
+        f"scan_cases: included {frame.patient_id.nunique()} detection patients, "
+        f"skipped {len(patient_dirs) - frame.patient_id.nunique()} folders without complete detection labels."
+    )
     return frame
