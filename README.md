@@ -8,7 +8,7 @@
 
 已支持从患者根目录 `/dataset/dataset/gx_all_registered/<patient_id>/` 自动读取 `ap_registered.nii.gz`、`pvp_registered.nii.gz`、`ncct_zcrop.nii.gz`，并分别从 `/dataset/detection/ap`、`/dataset/detection/pvp` 匹配NIfTI病灶伪标签。患者文件夹内的 `ap_mask_registered.nii.gz` / `pvp_mask_registered.nii.gz` **不会**被当成外部病灶标签。
 
-无需再提供 `--ncct-root`。具体示例、检查命令和伪标签命名规则见 **[实际服务器路径说明](docs/SERVER_LAYOUT.md)**。目前尚未核实伪标签实际文件名及其affine/shape，扫描与后续prepare均采用严格检查。
+无需再提供 `--ncct-root`。具体示例、检查命令和伪标签命名规则见 **[实际服务器路径说明](docs/SERVER_LAYOUT.md)**。目前尚未核实伪标签实际文件名及其affine/shape，扫描与后续prepare均采用严格检查。若配准总队列大于检测队列，扫描器仅纳入AP和PVP两期均具有唯一外部伪标签的患者；两期均无伪标签的患者自动跳过，一期有标签另一期缺失则报错。
 
 ## 0. 实施状态及安全边界
 
