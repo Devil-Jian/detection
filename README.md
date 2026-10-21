@@ -4,6 +4,12 @@
 
 > **实验定位**：约300例，2D单类别 liver_lesion，AP与PVP分别训练。增强相关组均在真实相应期相测试集评价；NCCT在相同测试患者的NCCT图像上评价。本仓库**不是**合成模型本体；使用已有NCCT→CECT模型输出合成图像后再接入。**未运行真实服务器数据训练**，须先核实你现有伪标签格式与几何空间。
 
+## 真实服务器目录已适配
+
+已支持从患者根目录 `/dataset/dataset/gx_all_registered/<patient_id>/` 自动读取 `ap_registered.nii.gz`、`pvp_registered.nii.gz`、`ncct_zcrop.nii.gz`，并分别从 `/dataset/detection/ap`、`/dataset/detection/pvp` 匹配NIfTI病灶伪标签。患者文件夹内的 `ap_mask_registered.nii.gz` / `pvp_mask_registered.nii.gz` **不会**被当成外部病灶标签。
+
+无需再提供 `--ncct-root`。具体示例、检查命令和伪标签命名规则见 **[实际服务器路径说明](docs/SERVER_LAYOUT.md)**。目前尚未核实伪标签实际文件名及其affine/shape，扫描与后续prepare均采用严格检查。若配准总队列大于检测队列，扫描器仅纳入AP和PVP两期均具有唯一外部伪标签的患者；两期均无伪标签的患者自动跳过，一期有标签另一期缺失则报错。
+
 ## 0. 实施状态及安全边界
 
 | 模块 | 状态 | 说明 |
@@ -398,7 +404,7 @@ Val/Test必须完整保留实际临床阳性/阴性切片分布。若你只给�
 
 ## 11. 常见错误
 
-- **scan找不到数据：** 文件名没包含AP/PVP token或病例层级非标准，请手工cases.csv。
+- **scan找不到数据：** 请检查每名患者的固定文件名ap_registered、pvp_registered、ncct_zcrop及外部伪标签是否可根据patient_id严格匹配。详见docs/SERVER_LAYOUT.md。
 - **image/mask geometry mismatch：** 不要强行按numpy索引对齐，先检查shape/affine，必要时重采样Mask（最近邻）。
 - **只发现阳性切片：** 教师伪Mask的空层不是阴性；提供受审核阴性CSV。
 - **Val/Test must have manual ground truth：** 准备人工标注后再做正式验证。
@@ -408,9 +414,9 @@ Val/Test必须完整保留实际临床阳性/阴性切片分布。若你只给�
 - **GPU/依赖版本不兼容：** 分开建环境安装官方RT-DETR；优先跑完YOLO smoke。
 - **论文结果不要引用SMOKE_TEST_ONLY导出目录。**
 
-## 12. 待你确认的真实数据接口
+## 12. 尚需确认的真实数据接口
 
-构建器支持规范化的Mask NIfTI输入；**尚无法直接确认你现有 /dataset/detection/ap 和 /dataset/detection/pvp 具体是什么格式**。请在服务器提供最小文件清单、NCCT路径和生成模型调用方式后，再适配真实数据。若伪标签不是Mask NIfTI，当前scan/prepare不能直接解析它们；这属于下一步必须完成的输入适配，而不是声称支持所有格式。
+已确认NCCT与Real-AP/PVP同处gx_all_registered患者目录，伪标签为NIfTI格式。**尚未核实外部伪标签文件名、Mask数值语义及其是否与配准后的AP/PVP具有一致shape/affine。** 如果命名不同需扩展路径解析；如果空间不同需正确重采样。NCCT→CECT生成器接口及人工验证/测试真值也仍需提供。
 
 详细文档：[数据格式/标签/质控](docs/DATA_CONTRACT.md)｜[训练和评价](docs/MODELS_AND_EVALUATION.md)。
 

@@ -2,8 +2,8 @@ paths:
   image_root: /dataset/dataset/gx_all_registered
   label_ap_root: /dataset/detection/ap
   label_pvp_root: /dataset/detection/pvp
-  # Set this to your actual NCCT directory, or put ncct_path in cases.csv:
-  ncct_root: null
+  # NCCT is auto-discovered as image_root/<patient_id>/ncct_zcrop.nii.gz
+  ncct_filename: ncct_zcrop.nii.gz
   workdir: /dataset/downstream_detection
   syn_root: /dataset/downstream_detection/synthetic_outputs
 
