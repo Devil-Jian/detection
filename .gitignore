@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.idea/
+.DS_Store
+
+# Medical images and derived data must stay on the research server.
+*.nii
+*.nii.gz
+*.dcm
+data/
+outputs/
+experiments/
+checkpoints/
+runs/
+results/
+**/images/
+**/labels/
+**/annotations/
+**/augmented/
+*.pth
+*.pt
+*.ckpt
+.env

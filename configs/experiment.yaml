@@ -1,0 +1,39 @@
+paths:
+  image_root: /dataset/dataset/gx_all_registered
+  label_ap_root: /dataset/detection/ap
+  label_pvp_root: /dataset/detection/pvp
+  # Set this to your actual NCCT directory, or put ncct_path in cases.csv:
+  ncct_root: null
+  workdir: /dataset/downstream_detection
+  syn_root: /dataset/downstream_detection/synthetic_outputs
+
+data:
+  hu_min: -100
+  hu_max: 300
+  min_box_area: 4
+  min_component_pixels: 4
+  train_fraction: 0.70
+  val_fraction: 0.15
+  seed: 42
+  positive_negative_ratio: 1.0
+  # Set true ONLY for engineering smoke tests; NEVER publish pseudo-label evaluation:
+  allow_pseudo_eval: false
+  match_radius_mm: 15
+  min_match_nmi: 0.0
+  require_reviewed_matching: true
+
+training:
+  image_size: 640
+  batch_size: 8
+  target_steps: 2000
+  seed: 42
+  device: "0"
+  pretrained: true
+  lr: 0.0001
+  patience: 15
+  workers: 4
+
+experiments:
+  models: [yolov8s, retinanet_r50, rtdetr_r18]
+  groups: [ncct, cect_real, cect_syn, cect_real_aug, cect_real_syn]
+  phases: [ap, pvp]
