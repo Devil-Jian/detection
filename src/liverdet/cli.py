@@ -165,6 +165,9 @@ def main(argv: list[str] | None=None) -> None:
             from .rtdetr import train_rtdetr
             result=train_rtdetr(args.rtdetr_repo,args.dataset,args.out,batch=args.batch,
                 target_steps=args.steps,workers=args.workers,seed=args.seed,gpu=args.device)
+        ckpt_file=Path(args.out)/"best_checkpoint.txt"
+        ckpt_file.parent.mkdir(parents=True,exist_ok=True)
+        ckpt_file.write_text(str(Path(result).resolve())+"\n",encoding="utf-8")
         print(f"Checkpoint: {result}")
     elif args.action=="predict":
         from .train import predict_yolo,predict_retina
