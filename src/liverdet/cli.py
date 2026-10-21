@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .inventory import scan_cases
+from .cohorts import build_cohorts
 from .audit import audit_cases
 from .prepare import prepare_slices
 from .matching import match_ncct, apply_reviews, synthesis_requests, attach_synthetic
@@ -25,6 +26,19 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--labels-pvp",required=True)
     s.add_argument("--ncct-root")
     s.add_argument("--out",required=True)
+
+    s=commands.add_parser("build-cohorts",
+        help="Build TRAIN=pseudo and VAL/TEST=manual from private case-ID CSV, without scanning the whole registered root")
+    s.add_argument("--case-list",required=True,
+                   help="CSV columns patient_id,cohort_type,ap_image,ap_mask,ap_mask_type,pvp_image,pvp_mask,pvp_mask_type")
+    s.add_argument("--workdir",required=True)
+    s.add_argument("--labels-ap",default="/dataset/detection/ap")
+    s.add_argument("--labels-pvp",default="/dataset/detection/pvp")
+    s.add_argument("--val-fraction",type=float,default=0.5,
+                   help="Fraction of ground-truth patients for Val; remainder Test")
+    s.add_argument("--seed",type=int,default=42)
+    s.add_argument("--skip-missing-pseudo",action="store_true",
+                   help="Exclude any pseudo training patient without BOTH valid phase images/masks, audit exclusion in cohort_inventory.csv")
 
     s=commands.add_parser("audit",help="Read-only NIfTI path, shape and affine audit before prepare")
     s.add_argument("--cases",required=True)
@@ -131,6 +145,11 @@ def main(argv: list[str] | None=None) -> None:
     if args.action=="scan":
         out=scan_cases(args.images,args.labels_ap,args.labels_pvp,args.out,args.ncct_root)
         print(f"Discovered {len(out)} phase cases. REVIEW cases.csv before preparing.")
+    elif args.action=="build-cohorts":
+        build_cohorts(args.case_list,args.workdir,
+                      pseudo_ap_root=args.labels_ap,pseudo_pvp_root=args.labels_pvp,
+                      val_fraction=args.val_fraction,seed=args.seed,
+                      allow_missing_pseudo=args.skip_missing_pseudo)
     elif args.action=="audit":
         audit_cases(args.cases,args.out,inspect_masks=args.inspect_masks,
                     affine_tolerance=args.affine_tolerance)
