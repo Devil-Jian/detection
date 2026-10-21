@@ -119,11 +119,6 @@ def prepare_slices(cases_csv: str, workdir: str, *,
         before_voxels = after_voxels = 0
         before_slices = after_slices = 0
         if case_label == "pseudo":
-            if case.split != "train":
-                # Legacy scanner smoke tests may intentionally have pseudo
-                # validation labels; allow them to be prepared but exporters
-                # refuse such labels for paper evaluation.
-                pass
             if not liver_path.is_file():
                 raise FileNotFoundError(
                     f"Missing {case.phase.upper()} liver mask for pseudo training case "
