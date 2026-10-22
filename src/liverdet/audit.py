@@ -1,6 +1,7 @@
 """Read-only audit of AP/PVP lesion labels and phase-specific liver mask geometry.
 
-Audit runs before slice extraction, writes a CSV even when errors exist, and
+Audit runs before slice extraction; liver checks are optional and OFF by default.
+The report is written even when errors exist, and
 NEVER assumes pseudo-mask zeros are verified negative slices.
 """
 from __future__ import annotations
@@ -35,7 +36,8 @@ def _load_3d(path: str) -> nib.spatialimages.SpatialImage:
 def audit_cases(cases_csv: str, output_csv: str, *,
                 inspect_masks: bool = False,
                 affine_tolerance: float = 1e-3,
-                fail_on_error: bool = True) -> pd.DataFrame:
+                fail_on_error: bool = True,
+                check_liver_mask: bool = False) -> pd.DataFrame:
     """Inspect paths, image/mask geometry, and optional pseudo-mask contents.
 
     inspect_masks=True loads each full 3D pseudo-mask and may take time;
@@ -58,7 +60,7 @@ def audit_cases(cases_csv: str, output_csv: str, *,
             problems.append("incomplete_phase_pair")
         image, mask, ncct, liver = None, None, None, None
         is_pseudo = str(getattr(row, "label_source", "")).strip() == "pseudo"
-        liver_path = str(Path(str(row.image_path)).parent / f"{phase}_mask_registered.nii.gz") if is_pseudo else ""
+        liver_path = str(Path(str(row.image_path)).parent / f"{phase}_mask_registered.nii.gz") if is_pseudo and check_liver_mask else ""
         shape_image = shape_mask = shape_ncct = liver_shape = ""
         liver_affine_diff = outside_liver_voxels = inside_liver_voxels = ""
         affine_max_diff = ""
@@ -84,7 +86,7 @@ def audit_cases(cases_csv: str, output_csv: str, *,
 
         # Check the same-phase registered liver mask ONLY for pseudo cases.
         # Ground-truth Val/Test lesions must not be liver-mask filtered.
-        if is_pseudo:
+        if is_pseudo and check_liver_mask:
             try:
                 liver = _load_3d(liver_path)
                 liver_shape = _format_shape(liver.shape)
