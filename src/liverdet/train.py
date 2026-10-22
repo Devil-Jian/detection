@@ -6,7 +6,6 @@ No silent substitution of an RT-DETR-L model under an R18 name.
 from __future__ import annotations
 
 import json
-import math
 import random
 from pathlib import Path
 
@@ -26,14 +25,12 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _epochs(n_items:int, batch:int, target_steps:int) -> int:
-    return max(1,int(math.ceil(target_steps / max(1, math.ceil(n_items/batch)))))
-
-
-def train_yolo(dataset_dir: str, out_dir: str, *, target_steps: int=2000,
+def train_yolo(dataset_dir: str, out_dir: str, *, epochs: int=100,
                batch: int=8, image_size: int=640, seed: int=42, device: str="0",
                pretrained: bool=True, patience:int=15) -> Path:
     from ultralytics import YOLO
+    if epochs < 1 or patience < 1:
+        raise ValueError("epochs and patience must be positive")
     path=Path(dataset_dir)
     train_gt=json.loads((path/"annotations"/"train.json").read_text())
     n=len(train_gt["images"])
@@ -41,11 +38,11 @@ def train_yolo(dataset_dir: str, out_dir: str, *, target_steps: int=2000,
         raise ValueError("Empty train set")
     seed_everything(seed)
     model=YOLO("yolov8s.pt" if pretrained else "yolov8s.yaml")
-    epochs=_epochs(n,batch,target_steps)
     # Explicitly disable implicit YOLO augmentations in all groups.
     # REAL-AUG is the independently exported 1:1 augmented-view dataset.
     model.train(data=str(path/"dataset.yaml"),imgsz=image_size,batch=batch,
-        epochs=epochs,patience=patience,seed=seed,deterministic=True,
+        epochs=epochs,patience=patience,val=True,save=True,
+        seed=seed,deterministic=True,
         device=device,project=str(Path(out_dir).parent),name=Path(out_dir).name,
         exist_ok=True,verbose=True,
         mosaic=0.0,mixup=0.0,copy_paste=0.0,
@@ -119,10 +116,12 @@ def retina_predictions(model, dataset_dir: str, split: str, device: torch.device
     return output
 
 
-def train_retinanet(dataset_dir: str, out_dir: str, *, target_steps: int=2000,
+def train_retinanet(dataset_dir: str, out_dir: str, *, epochs: int=100,
                     batch:int=8, seed:int=42, lr:float=1e-4,
                     device:str="cuda", workers:int=4, pretrained:bool=True,
                     patience:int=15) -> Path:
+    if epochs < 1 or patience < 1:
+        raise ValueError("epochs and patience must be positive")
     seed_everything(seed)
     device=torch.device(device if torch.cuda.is_available() or "cpu" in device else "cpu")
     ds=CocoTorchDataset(dataset_dir,"train")
@@ -132,7 +131,6 @@ def train_retinanet(dataset_dir: str, out_dir: str, *, target_steps: int=2000,
     net=create_retinanet(pretrained).to(device)
     optimizer=torch.optim.AdamW(net.parameters(),lr=lr,weight_decay=1e-4)
     scaler=torch.amp.GradScaler("cuda",enabled=(device.type=="cuda"))
-    epochs=_epochs(len(ds),batch,target_steps)
     out=Path(out_dir)
     out.mkdir(parents=True,exist_ok=True)
     best=-float("inf")

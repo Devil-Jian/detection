@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -48,7 +49,7 @@ def run(args):
         metrics=results_root/f"{key}_metrics.json"
         train_cmd=[
             "liverdet","train","--model",model,"--dataset",str(data),
-            "--out",str(run_dir),"--steps",str(args.steps),
+            "--out",str(run_dir),"--epochs",str(args.epochs),
             "--batch",str(args.batch),"--seed",str(args.seed),
             "--device",str(args.device)]
         if model=="rtdetr_r18":
@@ -76,10 +77,22 @@ def run(args):
         checkpoint=ckpt_txt.read_text().strip()
         if not Path(checkpoint).is_file():
             raise FileNotFoundError(checkpoint)
-        if not (args.skip_completed and preds.is_file()):
-            subprocess.run(predict_cmd+["--checkpoint",checkpoint],check=True)
-        if not (args.skip_completed and metrics.is_file()):
-            subprocess.run(eval_cmd,check=True)
+        # New train CLI already predicts and evaluates Test once, after the
+        # best Val checkpoint is fixed. Copy these files instead of testing
+        # again. Legacy runs without them retain the old predict/eval fallback.
+        auto_preds=run_dir/"test_predictions.json"
+        auto_metrics=run_dir/"test_metrics.json"
+        if auto_preds.is_file() and auto_metrics.is_file():
+            results_root.mkdir(parents=True,exist_ok=True)
+            if not (args.skip_completed and preds.is_file()):
+                shutil.copy2(auto_preds,preds)
+            if not (args.skip_completed and metrics.is_file()):
+                shutil.copy2(auto_metrics,metrics)
+        else:
+            if not (args.skip_completed and preds.is_file()):
+                subprocess.run(predict_cmd+["--checkpoint",checkpoint],check=True)
+            if not (args.skip_completed and metrics.is_file()):
+                subprocess.run(eval_cmd,check=True)
         records.append(dict(experiment=key,model=model,group=group,phase=phase,
                             checkpoint=checkpoint,predictions=str(preds),
                             metrics=str(metrics)))
@@ -103,7 +116,7 @@ def main(argv=None):
     parser.add_argument("--models",nargs="*",choices=MODELS)
     parser.add_argument("--groups",nargs="*",choices=("ncct",)+GROUPS)
     parser.add_argument("--phases",nargs="*",choices=("ncct","ap","pvp"))
-    parser.add_argument("--steps",type=int,default=2000)
+    parser.add_argument("--epochs",type=int,default=100)
     parser.add_argument("--batch",type=int,default=8)
     parser.add_argument("--seed",type=int,default=42)
     parser.add_argument("--device",default="0")

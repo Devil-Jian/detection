@@ -8,7 +8,6 @@ For its raw COCO category_id=1 and remap=False, num_classes=2 is required
 from __future__ import annotations
 
 import json
-import math
 import os
 from pathlib import Path
 import subprocess
@@ -21,7 +20,7 @@ import torchvision.transforms as T
 
 
 def build_rtdetr_config(official_repo: str, dataset_dir: str, output_dir: str,
-                        batch: int=8, target_steps: int=2000,
+                        batch: int=8, epochs: int=100,
                         workers: int=4, seed: int=42) -> Path:
     root=Path(official_repo).resolve()
     if (root/"rtdetr_pytorch").is_dir():
@@ -34,7 +33,8 @@ def build_rtdetr_config(official_repo: str, dataset_dir: str, output_dir: str,
     n=len(train["images"])
     if n == 0:
         raise ValueError("Empty RT-DETR training set")
-    epochs=max(1,int(math.ceil(target_steps / max(1,math.ceil(n/batch)))))
+    if epochs < 1:
+        raise ValueError("epochs must be positive")
     dest=Path(output_dir).resolve()
     dest.mkdir(parents=True,exist_ok=True)
     cfg={
@@ -43,6 +43,10 @@ def build_rtdetr_config(official_repo: str, dataset_dir: str, output_dir: str,
         "num_classes":2, # Raw COCO category id=1 (not remapped)
         "remap_mscoco_category":False,
         "epoches":epochs,
+        # Official DetSolver.fit evaluates on Val every epoch but only writes
+        # named epoch checkpoints at checkpoint_step intervals. Set it to 1
+        # so the best Val epoch always has a matching saved checkpoint.
+        "checkpoint_step":1,
         "train_dataloader":{
             "dataset":{"img_folder":str(data/"images"/"train"),
                        "ann_file":str(data/"annotations"/"train.json")},
@@ -58,12 +62,12 @@ def build_rtdetr_config(official_repo: str, dataset_dir: str, output_dir: str,
 
 
 def train_rtdetr(official_repo: str, dataset_dir: str, out_dir: str, *,
-                 batch: int=8, target_steps: int=2000, workers: int=4,
+                 batch: int=8, epochs: int=100, workers: int=4,
                  seed: int=42, gpu: str="0", amp: bool=True) -> Path:
     root=Path(official_repo).resolve()
     if (root/"rtdetr_pytorch").is_dir():
         root=root/"rtdetr_pytorch"
-    config=build_rtdetr_config(str(root),dataset_dir,out_dir,batch,target_steps,workers,seed)
+    config=build_rtdetr_config(str(root),dataset_dir,out_dir,batch,epochs,workers,seed)
     command=[sys.executable,"tools/train.py","-c",str(config),"--seed",str(seed)]
     if amp:
         command.append("--amp")
@@ -71,7 +75,8 @@ def train_rtdetr(official_repo: str, dataset_dir: str, out_dir: str, *,
     env["CUDA_VISIBLE_DEVICES"]=str(gpu)
     subprocess.run(command,cwd=root,env=env,check=True)
     out=Path(out_dir)
-    # Official engine stores checkpoint{epoch:04d}.pth each epoch by default.
+    # Our config enforces checkpoint_step=1; official engine validates on Val
+    # every epoch. Upstream RT-DETR does NOT implement patience early stopping.
     records=out/"log.txt"
     if records.exists():
         best=(-float("inf"),None)
@@ -87,10 +92,11 @@ def train_rtdetr(official_repo: str, dataset_dir: str, out_dir: str, *,
                 continue
         if best[1] is not None:
             return best[1]
-    latest=out/"checkpoint.pth"
-    if not latest.is_file():
-        raise RuntimeError("Official RT-DETR did not produce checkpoint.pth")
-    return latest
+    raise RuntimeError(
+        "No Val-selected RT-DETR checkpoint found in log.txt and checkpoint{epoch:04d}.pth. "
+        "Check official solver logs and checkpoint_step=1; refusing to test a "
+        "last-epoch checkpoint without Val model selection."
+    )
 
 
 @torch.no_grad()
