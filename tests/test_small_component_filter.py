@@ -73,6 +73,25 @@ def test_no_liver_required_pseudo_noise_removed_gt_intact(tmp_path):
     assert set(qc.liver_filter_enabled.astype(str)) == {"False"}
     assert not (output / "manifests" / "liver_filter_qc.csv").exists()
 
+    # Each actually exported Train PNG is discoverable with exact patient,
+    # phase, original volume, pseudo-mask file and zero-based slice index.
+    index = pd.read_csv(output / "manifests" / "train_slices.csv")
+    assert list(index.columns) == [
+        "sample_id", "patient_id", "phase", "slice_index",
+        "source_volume", "mask_path", "real_path", "label_source",
+    ]
+    assert list(index.sample_id) == ["P_PSEUDO_ap_0001", "P_PSEUDO_pvp_0001"]
+    assert set(index.slice_index) == {1}
+    assert set(index.label_source) == {"pseudo"}
+    assert set(index.phase) == {"ap", "pvp"}
+    for row in index.itertuples(index=False):
+        assert Path(row.source_volume).exists()
+        assert Path(row.mask_path).exists()
+        assert Path(row.real_path).is_file()
+        assert row.sample_id in Path(row.real_path).name
+    assert set(index.sample_id) == set(samples.loc[samples.split == "train", "sample_id"])
+
+
 
 def test_all_pseudo_components_too_small_are_unknown_not_negatives(tmp_path):
     csv = _cases(tmp_path, large_pseudo=False)
@@ -84,6 +103,11 @@ def test_all_pseudo_components_too_small_are_unknown_not_negatives(tmp_path):
     qc = pd.read_csv(out / "manifests" / "small_component_filter_qc.csv")
     assert set(qc.components_removed) == {1}
     assert set(qc.positive_slices_after) == {0}
+    # A header-only file is still created when every pseudo slice is removed.
+    train_index = pd.read_csv(out / "manifests" / "train_slices.csv")
+    assert train_index.empty
+    assert "source_volume" in train_index.columns
+    assert "real_path" in train_index.columns
 
 
 def test_one_pixel_pseudo_component_remains_when_min_is_one(tmp_path):
@@ -98,3 +122,20 @@ def test_invalid_area_threshold_rejected(tmp_path):
     csv = _cases(tmp_path)
     with pytest.raises(ValueError, match="min_component_pixels"):
         prepare_slices(str(csv), str(tmp_path / "out"), min_component_pixels=0)
+
+
+def test_train_slice_optional_stdout_includes_requested_identifiers(tmp_path, capsys):
+    csv = _cases(tmp_path)
+    prepare_slices(
+        str(csv), str(tmp_path / "out"), min_component_pixels=4,
+        print_train_slices=True,
+    )
+    output = capsys.readouterr().out
+    for phase in ("ap", "pvp"):
+        assert (
+            f"TRAIN_SLICE sample_id=P_PSEUDO_{phase}_0001 "
+            f"phase={phase} slice_index=1 source_volume="
+        ) in output
+        assert f"/P_PSEUDO_{phase}_0001.png" in output
+    assert "TRAIN_SLICE sample_id=P_VAL" not in output
+    assert "Train slice index:" in output
