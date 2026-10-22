@@ -110,6 +110,12 @@ liverdet prepare --cases "$BASE/manifests/cases.csv" \
 4. 不得把GT的病灶Mask输入被评估模型作为推理提示。
 5. 保存完整cohort_inventory.csv、splits.csv、mask几何检查报告及各次模型训练配置。
 
-## 6. Liver Mask过滤（仅Train伪标签）
+## 6. 当前策略：只过滤极小的二维伪标签连通域（不使用Liver Mask）
 
-AP、PVP注册图像各有对应Liver Mask：ap_mask_registered.nii.gz、pvp_mask_registered.nii.gz。构建Train检测框时，先将外部病灶伪Mask与同期相Liver Mask取体素交集，仅保留肝内预测；Val/Test人工真实肿瘤Mask完全不裁剪。liverdet audit会提前检查两个Liver Mask，prepare写入liver_filter_qc.csv用于排查错删病例。详见[LIVER_PSEUDO_FILTER.md](LIVER_PSEUDO_FILTER.md)。
+`liverdet prepare` 默认不读取、不要求 AP/PVP Liver Mask，也不裁剪肝外伪标签。对 Train 伪标签按2D八连通域前景像素数量过滤，默认面积阈值4像素，由 `--min-component-pixels` 调整。Val/Test人工Tumor Mask不受任何面积阈值过滤。空伪标签切片不自动当作阴性。输出 `small_component_filter_qc.csv`（过滤前后组件数和阳性切片数）。
+
+**处理过的数据建议写入新的workdir**，例如 `/dataset/downstream_detection_cc4`，避免误读以前可能保存的肝Mask过滤结果。详见 [SMALL_COMPONENT_FILTER.md](SMALL_COMPONENT_FILTER.md)。
+
+## 7. 可选历史Liver Mask过滤（默认关闭）
+
+仅当明确执行 `liverdet prepare --filter-pseudo-liver-mask` 时，才读取同期相 `ap_mask_registered.nii.gz` / `pvp_mask_registered.nii.gz` 做肝内ROI裁剪。对应审计增加 `liverdet audit --check-liver-mask`。**当前主线不启用**。旧方法详见 [LIVER_PSEUDO_FILTER.md](LIVER_PSEUDO_FILTER.md)。
