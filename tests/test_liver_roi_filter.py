@@ -60,7 +60,7 @@ def make_cases(tmp_path, *, exterior_only=False, missing_liver=False, bad_liver_
 def test_filter_pseudo_inside_liver_only_and_keep_manual_gt(tmp_path):
     cases = make_cases(tmp_path)
     out = tmp_path / "processed"
-    audit = audit_cases(str(cases), str(tmp_path/"audit.csv"),inspect_masks=True)
+    audit = audit_cases(str(cases), str(tmp_path/"audit.csv"),inspect_masks=True,check_liver_mask=True)
     assert "pseudo_lesions_outside_liver_will_be_filtered" in audit.loc[
         (audit.patient_id=="A0_1004") & (audit.phase=="ap"), "warnings"].iloc[0]
     assert audit.loc[(audit.patient_id=="A0_1004") &
@@ -68,7 +68,7 @@ def test_filter_pseudo_inside_liver_only_and_keep_manual_gt(tmp_path):
     assert audit.loc[(audit.patient_id=="A1_2001") &
                      (audit.phase=="ap"), "liver_mask_path"].iloc[0] == ""
 
-    df = prepare_slices(str(cases), str(out))
+    df = prepare_slices(str(cases), str(out),filter_pseudo_liver_mask=True)
     pseudo = df[(df.split=="train") & (df.phase=="ap")]
     assert len(pseudo) == 1
     assert pseudo.iloc[0].slice_index == 1
@@ -91,7 +91,7 @@ def test_filter_pseudo_inside_liver_only_and_keep_manual_gt(tmp_path):
 
 def test_outside_only_pseudo_does_not_become_negative(tmp_path):
     cases = make_cases(tmp_path, exterior_only=True)
-    df=prepare_slices(str(cases),str(tmp_path/"processed"))
+    df=prepare_slices(str(cases),str(tmp_path/"processed"),filter_pseudo_liver_mask=True)
     assert (df.split=="train").sum() == 0
     qc=pd.read_csv(tmp_path/"processed"/"manifests"/"liver_filter_qc.csv")
     assert set(qc.positive_slices_before)=={1}
@@ -103,6 +103,6 @@ def test_missing_or_misaligned_liver_mask_fails_closed(tmp_path,missing,affine):
     cases = make_cases(tmp_path,missing_liver=missing,bad_liver_affine=affine)
     with pytest.raises((FileNotFoundError,ValueError),
                        match="liver mask|Liver mask"):
-        prepare_slices(str(cases),str(tmp_path/"processed"))
+        prepare_slices(str(cases),str(tmp_path/"processed"),filter_pseudo_liver_mask=True)
     with pytest.raises(ValueError,match="failed preflight"):
-        audit_cases(str(cases),str(tmp_path/"audit.csv"))
+        audit_cases(str(cases),str(tmp_path/"audit.csv"),check_liver_mask=True)
