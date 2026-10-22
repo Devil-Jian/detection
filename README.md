@@ -380,7 +380,7 @@ DATA=$BASE/exports/cect_real_ap
 
 liverdet train --model yolov8s --dataset "$DATA" \
   --out "$BASE/runs/yolov8s_ap_real_seed42" \
-  --steps 2000 --batch 8 --device 0 --seed 42
+  --epochs 100 --batch 8 --device 0 --seed 42
 
 liverdet predict --model yolov8s \
   --dataset "$DATA" --split test \
@@ -392,6 +392,8 @@ liverdet evaluate --dataset "$DATA" --split test \
   --out "$BASE/results/yolov8s_ap_real_metrics.json"
 ~~~
 
+训练每个Epoch进行一次Val并自动保存best.pt；达到100 Epoch上限或连续15个Epoch验证指标未改善即结束。训练命令结束后将自动用Val最佳权重执行一次Test预测和统一评价，输出到runs目录下的test_predictions.json及test_metrics.json，无需再次手动执行下方test预测/评价示例。
+
 默认初始权重yolov8s.pt（首次运行可能联网下载），用--no-pretrained从零训练。所有组关闭YOLO内置mosaic/mixup/几何与颜色随机增强，以避免REAL与REAL-AUG的比较混杂。
 
 ### 7.2 RetinaNet-R50（Torchvision）
@@ -399,14 +401,14 @@ liverdet evaluate --dataset "$DATA" --split test \
 ~~~bash
 liverdet train --model retinanet_r50 --dataset "$DATA" \
   --out "$BASE/runs/retinanet_ap_real_seed42" \
-  --steps 2000 --batch 8 --device 0
+  --epochs 100 --batch 8 --device 0
 
 liverdet predict --model retinanet_r50 --dataset "$DATA" \
   --checkpoint "$BASE/runs/retinanet_ap_real_seed42/best.pth" \
   --out "$BASE/results/retinanet_ap_real_preds.json" --device 0
 ~~~
 
-RetinaNet使用torchvision ResNet50-FPN单类别目标、背景类索引0、目标类索引1。初始权重为ImageNet Backbone（可以--no-pretrained避免下载）。所有组固定相同目标优化步数，按每组图片数自动换算epoch上限。
+RetinaNet同样每个Epoch在Val上计算AP50、选择最优best.pth，支持--patience早停，并在结束后自动Test一次。RT-DETR沿用官方引擎每轮Val，不支持patience早停，训练到Epoch上限。RetinaNet使用torchvision ResNet50-FPN单类别目标、背景类索引0、目标类索引1。初始权重为ImageNet Backbone（可以--no-pretrained避免下载）。所有组固定相同目标优化步数，按每组图片数自动换算epoch上限。
 
 ### 7.3 RT-DETR-R18VD（官方PyTorch实现）
 
@@ -419,7 +421,7 @@ liverdet train --model rtdetr_r18 \
   --rtdetr-repo /dataset/external/RT-DETR \
   --dataset "$DATA" \
   --out "$BASE/runs/rtdetr_ap_real_seed42" \
-  --steps 2000 --batch 8 --device 0
+  --epochs 100 --batch 8 --device 0
 ~~~
 
 训练后运行预测（必须提供生成的配置文件）：
@@ -451,6 +453,8 @@ RT-DETR-R18VD  : 同上
 ~~~bash
 liverdet matrix
 ~~~
+
+默认训练上限100 Epoch（不再通过--steps换算），每轮Val后更新最优权重；YOLO与RetinaNet支持早停，结束后统一Test一次。**固定Epoch并不等于固定训练步数**，对REAL+SYN等较大训练集应记录实际步数并考虑等步数消融。
 
 优先级：先跑YOLOv8s REAL-AP（检查标签正确性）→ SYN-AP（检查配准和合成框）→ YOLO全9组 → 其余18组。
 
@@ -511,13 +515,13 @@ python scripts/run_matrix.py \
 # 正式顺序运行YOLOv8s的9组，断点续跑：
 python scripts/run_matrix.py \
   --exports "$BASE/exports" --runs "$BASE/runs" --results "$BASE/results" \
-  --models yolov8s --steps 2000 --batch 8 --device 0 --skip-completed
+  --models yolov8s --epochs 100 --batch 8 --device 0 --skip-completed
 
 # 完整27组（需要先安装官方RT-DETR及相关环境）：
 python scripts/run_matrix.py \
   --exports "$BASE/exports" --runs "$BASE/runs" --results "$BASE/results" \
   --rtdetr-repo /dataset/external/RT-DETR \
-  --steps 2000 --batch 8 --device 0 --skip-completed
+  --epochs 100 --batch 8 --device 0 --skip-completed
 ~~~
 
-脚本自动从每次训练写出的best_checkpoint.txt读取最优Checkpoint，完成预测及统一评价，并输出 experiment_manifest.csv。当前为**顺序训练**，适合单GPU/独立任务队列；多GPU可在不同进程用--models筛选，务必保证输出目录不冲突。真实数据未经验证前先用 --dry-run 检查所有配置。
+脚本自动从每次训练写出的best_checkpoint.txt读取最优Checkpoint，复用train结束时自动生成的Test预测及统一评价结果（历史运行缺失时才补算），并输出 experiment_manifest.csv。当前为**顺序训练**，适合单GPU/独立任务队列；多GPU可在不同进程用--models筛选，务必保证输出目录不冲突。真实数据未经验证前先用 --dry-run 检查所有配置。
