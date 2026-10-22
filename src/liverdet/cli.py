@@ -103,14 +103,16 @@ def configure() -> argparse.ArgumentParser:
                    choices=["yolov8s","retinanet_r50","rtdetr_r18"])
     s.add_argument("--dataset",required=True)
     s.add_argument("--out",required=True)
-    s.add_argument("--steps",type=int,default=2000)
+    s.add_argument("--epochs",type=int,default=100,
+                   help="Maximum full training epochs (default 100); validate after every epoch")
     s.add_argument("--batch",type=int,default=8)
     s.add_argument("--seed",type=int,default=42)
     s.add_argument("--device",default="0")
     s.add_argument("--workers",type=int,default=4)
     s.add_argument("--lr",type=float,default=1e-4)
     s.add_argument("--imgsz",type=int,default=640)
-    s.add_argument("--patience",type=int,default=15)
+    s.add_argument("--patience",type=int,default=15,
+                   help="Early-stop after this many Val epochs without improvement (YOLO/RetinaNet)")
     s.add_argument("--no-pretrained",action="store_true")
     s.add_argument("--rtdetr-repo",help="Path to official RT-DETR checkout")
 
@@ -190,25 +192,58 @@ def main(argv: list[str] | None=None) -> None:
         print("\n".join(matrix()))
     elif args.action=="train":
         from .train import train_yolo,train_retinanet
+        if args.epochs < 1 or args.patience < 1:
+            raise ValueError("--epochs and --patience must be >= 1")
+        data_root = Path(args.dataset)
+        if (data_root/"SMOKE_TEST_ONLY").exists():
+            raise ValueError("Test evaluation is not valid for SMOKE_TEST_ONLY pseudo GT exports.")
+        if not (data_root/"annotations"/"test.json").is_file():
+            raise FileNotFoundError(data_root/"annotations"/"test.json")
         if args.model=="yolov8s":
-            result=train_yolo(args.dataset,args.out,target_steps=args.steps,batch=args.batch,
+            result=train_yolo(args.dataset,args.out,epochs=args.epochs,batch=args.batch,
                  image_size=args.imgsz,seed=args.seed,device=args.device,
                  pretrained=not args.no_pretrained,patience=args.patience)
         elif args.model=="retinanet_r50":
             device=f"cuda:{args.device}" if str(args.device).isdigit() else args.device
-            result=train_retinanet(args.dataset,args.out,target_steps=args.steps,batch=args.batch,
+            result=train_retinanet(args.dataset,args.out,epochs=args.epochs,batch=args.batch,
                  seed=args.seed,device=device,workers=args.workers,lr=args.lr,
                  pretrained=not args.no_pretrained,patience=args.patience)
         else:
             if not args.rtdetr_repo:
                 raise ValueError("RT-DETR-R18 requires --rtdetr-repo path to official checkout")
             from .rtdetr import train_rtdetr
+            print("RT-DETR official solver validates once per epoch but does not support patience-based early stopping.", flush=True)
             result=train_rtdetr(args.rtdetr_repo,args.dataset,args.out,batch=args.batch,
-                target_steps=args.steps,workers=args.workers,seed=args.seed,gpu=args.device)
+                epochs=args.epochs,workers=args.workers,seed=args.seed,gpu=args.device)
         ckpt_file=Path(args.out)/"best_checkpoint.txt"
         ckpt_file.parent.mkdir(parents=True,exist_ok=True)
         ckpt_file.write_text(str(Path(result).resolve())+"\n",encoding="utf-8")
-        print(f"Checkpoint: {result}")
+        print(f"Best Val checkpoint: {result}", flush=True)
+        # Only now, after training has finished or early-stopped and the
+        # checkpoint is fixed, predict on the untouched Test set exactly once.
+        test_preds=Path(args.out)/"test_predictions.json"
+        test_metrics=Path(args.out)/"test_metrics.json"
+        if args.model=="yolov8s":
+            from .train import predict_yolo
+            predict_yolo(str(result),args.dataset,"test",str(test_preds),
+                         image_size=args.imgsz,device=args.device)
+        elif args.model=="retinanet_r50":
+            from .train import predict_retina
+            device=f"cuda:{args.device}" if str(args.device).isdigit() else args.device
+            predict_retina(str(result),args.dataset,"test",str(test_preds),
+                           device=device,batch=max(1,args.batch//2),workers=args.workers)
+        else:
+            from .rtdetr import predict_rtdetr
+            predict_rtdetr(args.rtdetr_repo,
+                str(Path(args.out)/"rtdetr_r18_experiment.yml"),
+                str(result),args.dataset,"test",str(test_preds),
+                device=f"cuda:{args.device}" if str(args.device).isdigit() else args.device)
+        test_result=evaluate_predictions(
+            str(data_root/"annotations"/"test.json"),str(test_preds),str(test_metrics)
+        )
+        print(f"Final Test from best Val checkpoint: AP50={test_result['ap50']:.4f}, "
+              f"AP50-95={test_result['ap_50_95']:.4f}. "
+              f"Predictions: {test_preds}; Metrics: {test_metrics}",flush=True)
     elif args.action=="predict":
         from .train import predict_yolo,predict_retina
         if args.model=="yolov8s":
