@@ -44,7 +44,9 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--cases",required=True)
     s.add_argument("--out",required=True)
     s.add_argument("--inspect-masks",action="store_true",
-                   help="Read full pseudo-mask volumes to count positive slices and check mask value ranges")
+                   help="Read full lesion-mask volumes to count positive slices and check mask value ranges")
+    s.add_argument("--check-liver-mask",action="store_true",
+                   help="Optional old workflow: audit liver mask geometry and pseudo lesions outside liver")
     s.add_argument("--affine-tolerance",type=float,default=1e-3)
 
     s=commands.add_parser("prepare",help="NIfTI -> PNG + slice manifest")
@@ -55,7 +57,10 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--seed",type=int,default=42)
     s.add_argument("--hu-min",type=float,default=-100)
     s.add_argument("--hu-max",type=float,default=300)
-    s.add_argument("--min-component-pixels",type=int,default=4)
+    s.add_argument("--min-component-pixels",type=int,default=4,
+                   help="Keep teacher pseudo 2D connected components with at least N pixels (default 4); manual GT is untouched")
+    s.add_argument("--filter-pseudo-liver-mask",action="store_true",
+                   help="Optional old workflow ONLY: clip pseudo masks by same-phase liver mask before extracting 2D boxes")
 
     s=commands.add_parser("match-ncct",help="Local spatial+NMI match, all QC initially pending")
     s.add_argument("--manifest",required=True)
@@ -152,12 +157,14 @@ def main(argv: list[str] | None=None) -> None:
                       allow_missing_pseudo=args.skip_missing_pseudo)
     elif args.action=="audit":
         audit_cases(args.cases,args.out,inspect_masks=args.inspect_masks,
-                    affine_tolerance=args.affine_tolerance)
+                    affine_tolerance=args.affine_tolerance,
+                    check_liver_mask=args.check_liver_mask)
     elif args.action=="prepare":
         frame=prepare_slices(args.cases,args.workdir,split_csv=args.splits,
             trusted_negatives_csv=args.trusted_negatives,seed=args.seed,
             hu_min=args.hu_min,hu_max=args.hu_max,
-            min_component_pixels=args.min_component_pixels)
+            min_component_pixels=args.min_component_pixels,
+            filter_pseudo_liver_mask=args.filter_pseudo_liver_mask)
         print(f"Prepared {len(frame)} verified positive/negative slices.")
     elif args.action=="match-ncct":
         frame=match_ncct(args.manifest,args.workdir,radius_mm=args.radius_mm,

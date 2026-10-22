@@ -4,18 +4,16 @@
 
 > **实验定位**：约300例，2D单类别 liver_lesion，AP与PVP分别训练。增强相关组均在真实相应期相测试集评价；NCCT在相同测试患者的NCCT图像上评价。本仓库**不是**合成模型本体；使用已有NCCT→CECT模型输出合成图像后再接入。**未运行真实服务器数据训练**，须先核实你现有伪标签格式与几何空间。
 
-## 训练伪标签：按 AP/PVP 的 Liver Mask 过滤（已实现）
+## 当前主线：仅过滤训练伪标签中的2D微小连通域（不使用Liver Mask）
 
-真实注册患者目录中的 ap_mask_registered.nii.gz 与 pvp_mask_registered.nii.gz **是 Liver Mask**，不是肿瘤Mask。针对 Train 的伪标签，提取2D框之前必需执行：
+**默认不对伪标签执行肝脏ROI交集。** Train伪标签直接在对应AP/PVP NIfTI每张切片提取8连通域，删除小于 `--min-component-pixels` 指定的前景面积（默认4像素）的连通域，然后生成BBox。阈值按前景像素数量，而不是BBox面积；建议在真实数据上抽查被删除的候选。
 
-    AP: (/dataset/detection/ap/<patient_id>.nii.gz > 0)
-        AND (<registered>/<patient_id>/ap_mask_registered.nii.gz > 0)
-    PVP: (/dataset/detection/pvp/<patient_id>.nii.gz > 0)
-        AND (<registered>/<patient_id>/pvp_mask_registered.nii.gz > 0)
+**Val/Test人工肿瘤真值始终不受该阈值影响**，包括1像素组件。伪标签去噪后没有病灶框的切片不能自动当作阴性。原始影像及Mask NIfTI不会被修改。
 
-Val/Test 的人工肿瘤真值不做 Liver Mask 过滤；肝外伪阳性被删除后，不自动转成训练阴性。Liver Mask缺失或与对应Real CT尺寸/Affine不一致会报错。liverdet audit检查肝脏Mask并统计肝外伪标签；liverdet prepare真正过滤并生成 liver_filter_qc.csv。
+`liverdet prepare` 默认不要求 `ap_mask_registered.nii.gz` 或 `pvp_mask_registered.nii.gz`，写入 `small_component_filter_qc.csv` 记录过滤的组件数。只有明确传入 `--filter-pseudo-liver-mask` 才启用历史肝Mask裁剪方案；`liverdet audit` 同样默认不检查肝Mask，历史检查需 `--check-liver-mask`。
 
-详细步骤：[docs/LIVER_PSEUDO_FILTER.md](docs/LIVER_PSEUDO_FILTER.md)。
+**[当前执行命令和数据质控](docs/SMALL_COMPONENT_FILTER.md)**。旧 Liver ROI 过滤作为可选对照保留于 [LIVER_PSEUDO_FILTER.md](docs/LIVER_PSEUDO_FILTER.md)。
+
 
 ---
 
@@ -39,7 +37,8 @@ liverdet audit --cases "$BASE/manifests/cases.csv" \
   --out "$BASE/manifests/nifti_audit.csv" --inspect-masks
 
 liverdet prepare --cases "$BASE/manifests/cases.csv" \
-  --splits "$BASE/manifests/splits.csv" --workdir "$BASE"
+  --splits "$BASE/manifests/splits.csv" --workdir /dataset/downstream_detection_cc4 \
+  --min-component-pixels 4
 ~~~
 
 - TRAIN：仅纳入两期伪Mask完整的pseudo_label病例；仅训练用，不可进Val/Test。
@@ -88,7 +87,7 @@ liverdet audit --cases "$BASE/manifests/cases.csv" \
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| NIfTI图像+NIfTI伪Mask→2D PNG/BBox | 已实现 | 伪标签先与同期相Liver Mask求交集，之后转换BBox；GT不裁剪 |
+| NIfTI图像+NIfTI伪Mask→2D PNG/BBox | 已实现 | 默认伪标签仅过滤面积过小的2D连通域；GT不做面积过滤；Liver ROI裁剪为可选 |
 | 病例扫描和患者级拆分 | 已实现 | 自动扫描只对常见命名有效；不符请手工准备cases.csv |
 | 可靠阳性/阴性采样 | 已实现 | 未检出的伪标签空层不当作阴性 |
 | NCCT受限相似性匹配 | 已实现初版 | 物理位置+局部全图NMI；结果**必须人工审核**；尚未实现肝脏ROI/序列动态规划 |
