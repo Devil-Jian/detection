@@ -1,5 +1,8 @@
 """Pseudo-only small-component filtering without any liver-mask dependency."""
 from pathlib import Path
+import json
+
+from PIL import Image
 
 import nibabel as nib
 import numpy as np
@@ -75,21 +78,33 @@ def test_no_liver_required_pseudo_noise_removed_gt_intact(tmp_path):
 
     # Each actually exported Train PNG is discoverable with exact patient,
     # phase, original volume, pseudo-mask file and zero-based slice index.
-    index = pd.read_csv(output / "manifests" / "train_slices.csv")
-    assert list(index.columns) == [
+    json_path = output / "manifests" / "train_slices.json"
+    index = json.loads(json_path.read_text(encoding="utf-8"))
+    assert isinstance(index, list)
+    assert len(index) == 2
+    assert list(index[0]) == [
         "sample_id", "patient_id", "phase", "slice_index",
         "source_volume", "mask_path", "real_path", "label_source",
     ]
-    assert list(index.sample_id) == ["P_PSEUDO_ap_0001", "P_PSEUDO_pvp_0001"]
-    assert set(index.slice_index) == {1}
-    assert set(index.label_source) == {"pseudo"}
-    assert set(index.phase) == {"ap", "pvp"}
-    for row in index.itertuples(index=False):
-        assert Path(row.source_volume).exists()
-        assert Path(row.mask_path).exists()
-        assert Path(row.real_path).is_file()
-        assert row.sample_id in Path(row.real_path).name
-    assert set(index.sample_id) == set(samples.loc[samples.split == "train", "sample_id"])
+    assert [row["sample_id"] for row in index] == [
+        "P_PSEUDO_ap_0001", "P_PSEUDO_pvp_0001"
+    ]
+    assert all(row["slice_index"] == 1 for row in index)
+    assert all(type(row["slice_index"]) is int for row in index)
+    assert {row["label_source"] for row in index} == {"pseudo"}
+    assert {row["phase"] for row in index} == {"ap", "pvp"}
+    for row in index:
+        assert Path(row["source_volume"]).exists()
+        assert Path(row["mask_path"]).exists()
+        assert Path(row["real_path"]).is_file()
+        assert row["sample_id"] in Path(row["real_path"]).name
+    assert {row["sample_id"] for row in index} == set(samples.loc[samples.split == "train", "sample_id"])
+    assert not (output / "manifests" / "train_slices.csv").exists()
+
+    # HU=0 maps to uint8 round((0+160)/400*255) = 102 by default.
+    with Image.open(index[0]["real_path"]) as im:
+        assert im.mode == "L"
+        assert np.all(np.asarray(im) == 102)
 
 
 
@@ -103,11 +118,9 @@ def test_all_pseudo_components_too_small_are_unknown_not_negatives(tmp_path):
     qc = pd.read_csv(out / "manifests" / "small_component_filter_qc.csv")
     assert set(qc.components_removed) == {1}
     assert set(qc.positive_slices_after) == {0}
-    # A header-only file is still created when every pseudo slice is removed.
-    train_index = pd.read_csv(out / "manifests" / "train_slices.csv")
-    assert train_index.empty
-    assert "source_volume" in train_index.columns
-    assert "real_path" in train_index.columns
+    # A valid empty JSON array is written even without Train positives.
+    train_index = json.loads((out / "manifests" / "train_slices.json").read_text())
+    assert train_index == []
 
 
 def test_one_pixel_pseudo_component_remains_when_min_is_one(tmp_path):
@@ -139,3 +152,40 @@ def test_train_slice_optional_stdout_includes_requested_identifiers(tmp_path, ca
         assert f"/P_PSEUDO_{phase}_0001.png" in output
     assert "TRAIN_SLICE sample_id=P_VAL" not in output
     assert "Train slice index:" in output
+
+
+def test_default_and_explicit_hu_windows(tmp_path):
+    csv = _cases(tmp_path)
+    default = prepare_slices(str(csv), str(tmp_path / "default"))
+    chosen = default[(default.split == "train") & (default.phase == "ap")].iloc[0]
+    with Image.open(chosen.real_path) as im:
+        assert int(np.asarray(im)[0, 0]) == 102
+
+    explicit = prepare_slices(str(csv), str(tmp_path / "override"),
+                              hu_min=-100, hu_max=300)
+    other = explicit[(explicit.split == "train") & (explicit.phase == "ap")].iloc[0]
+    with Image.open(other.real_path) as im:
+        assert int(np.asarray(im)[0, 0]) == 64
+
+def test_matching_default_uses_same_hu_window():
+    from inspect import signature
+    from liverdet.matching import match_ncct
+    assert signature(prepare_slices).parameters["hu_min"].default == -160
+    assert signature(prepare_slices).parameters["hu_max"].default == 240
+    assert signature(match_ncct).parameters["hu_min"].default == -160
+    assert signature(match_ncct).parameters["hu_max"].default == 240
+
+def test_cli_hu_defaults_and_json_index():
+    from liverdet.cli import configure
+    parser = configure()
+    for action in ("prepare", "match-ncct"):
+        args = [action, "--workdir", "/tmp/out", "--manifest", "/tmp/slices.csv"] if action == "match-ncct" else [
+            action, "--cases", "/tmp/cases.csv", "--workdir", "/tmp/out"
+        ]
+        options = parser.parse_args(args)
+        assert options.hu_min == -160
+        assert options.hu_max == 240
+    assert parser.parse_args([
+        "prepare", "--cases", "/tmp/cases.csv", "--workdir", "/tmp/out",
+        "--hu-min", "-100", "--hu-max", "300"
+    ]).hu_min == -100
