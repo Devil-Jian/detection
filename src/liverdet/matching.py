@@ -59,7 +59,7 @@ def reproject_boxes(boxes: list[list[float]], src_affine: np.ndarray, src_z: int
 
 
 def match_ncct(manifest: str, workdir: str, *, radius_mm: float = 15,
-               hu_min: float = -100, hu_max: float = 300) -> pd.DataFrame:
+               hu_min: float = -160, hu_max: float = 240) -> pd.DataFrame:
     df = read_csv(manifest, ["sample_id", "patient_id", "phase", "slice_index",
                              "source_volume", "ncct_volume", "boxes_real", "real_path"])
     if radius_mm <= 0:
