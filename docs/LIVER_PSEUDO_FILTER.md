@@ -1,3 +1,9 @@
+# 历史可选方案：Liver ROI 伪标签过滤（当前默认不启用）
+
+**最新主线已切换为仅过滤极小2D伪标签连通域，不做Liver Mask裁剪。** 详见 [SMALL_COMPONENT_FILTER.md](SMALL_COMPONENT_FILTER.md)。
+
+如需复现本文以下旧方法，必须明确添加 `liverdet prepare --filter-pseudo-liver-mask` 及 `liverdet audit --check-liver-mask`，并写入新的独立workdir。下文旧命令缺少这些参数，直接执行不会触发肝Mask过滤。
+
 # 伪标签肝脏区域过滤：Liver ROI Filtering
 
 ## 1. 固定文件路径
