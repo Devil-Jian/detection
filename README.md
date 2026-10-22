@@ -12,6 +12,8 @@
 
 `liverdet prepare` 默认不要求 `ap_mask_registered.nii.gz` 或 `pvp_mask_registered.nii.gz`，写入 `small_component_filter_qc.csv` 记录过滤的组件数。只有明确传入 `--filter-pseudo-liver-mask` 才启用历史肝Mask裁剪方案；`liverdet audit` 同样默认不检查肝Mask，历史检查需 `--check-liver-mask`。
 
+执行 `liverdet prepare` 后会自动生成 `manifests/train_slices.csv`，仅记录实际保留的Train切片（sample_id、patient_id、phase、原始NIfTI路径、伪标签路径、零基切片ID、PNG路径）；添加 `--print-train-slices` 可同步逐条打印到终端。完整 `slices.csv` 仍包含Train/Val/Test，原有格式不变。
+
 **[当前执行命令和数据质控](docs/SMALL_COMPONENT_FILTER.md)**。旧 Liver ROI 过滤作为可选对照保留于 [LIVER_PSEUDO_FILTER.md](docs/LIVER_PSEUDO_FILTER.md)。
 
 
