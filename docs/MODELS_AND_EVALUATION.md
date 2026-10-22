@@ -32,7 +32,7 @@ Ultralytics原生YOLOv8s权重或结构；训练时关闭默认mosaic、mixup、
 
 ### RetinaNet-R50
 
-torchvision.models.detection.retinanet_resnet50_fpn，num_classes=2（索引0=背景，索引1=lesion）。COCO读取到的labels统一1。使用AdamW、AMP、固定target_steps近似控制训练预算；依据Val AP@0.5选择最优.pth。默认可下载ImageNet backbone预训练权重；无外网可--no-pretrained。
+torchvision.models.detection.retinanet_resnet50_fpn，num_classes=2（索引0=背景，索引1=lesion）。COCO读取到的labels统一1。使用AdamW、AMP，每个Epoch结束后在Val上计算AP@0.5并更新最优best.pth；训练上限100 Epoch，若连续patience=15个Epoch未提升则提前停止。默认可下载ImageNet backbone预训练权重；无外网可--no-pretrained。
 
 ### RT-DETR-R18VD
 
@@ -40,20 +40,22 @@ torchvision.models.detection.retinanet_resnet50_fpn，num_classes=2（索引0=�
 
 - 官方自定义数据设置 remap_mscoco_category: False。
 - 本项目COCO category_id=1，因此num_classes=2，索引0闲置；最终预测只保留class1并导出category_id=1。
-- 输出checkpoint*.pth；适配器尝试根据日志中的Val AP选取最佳轮次。RT-DETR官方代码会变化，正式使用前需在服务器执行小规模试跑并核对配置加载。
+- 通过checkpoint_step=1保留每个Epoch的checkpoint*.pth；官方训练每轮进行Val评估；适配器依据Val COCO AP@[.5:.95]确定最佳checkpoint。**官方RT-DETR目前没有patience早停，会训练到设置的Epoch上限**。RT-DETR官方代码会变化，正式使用前需在服务器执行小规模试跑并核对配置加载。
 - 预测代码按官方tools/infer.py的加载、deploy和postprocessor逻辑适配；在外部官方repo提供的环境运行。
 
 使用官方R18权重时需确认下载和预训练策略，**不要使用RT-DETR-L代替R18**。
 
-## 四、固定训练预算的解释
+## 四、Epoch训练与验证/测试协议
 
-使用target_steps≈2000作为首轮可行性试跑，而非医学任务必然最优；每组图片数量N、批量B，自动采用：
+统一使用 `--epochs 100` 作为Epoch上限，默认batch=8、patience=15。
 
-    epochs = ceil(target_steps / ceil(N/B))
+- YOLOv8s：每个Epoch在Val上评估、由Ultralytics的Val综合fitness自动选best.pt；15轮无改善可早停。
+- RetinaNet-R50：每轮结束在Val上评估AP@0.5，更新best.pth；15轮无改善可早停。
+- RT-DETR-R18VD：官方训练引擎每个Epoch评估Val，并保存同期checkpoint；当前官方训练**不支持patience早停**，按100 Epoch上限运行。
+- 每次训练结束或早停后，在不使用Test参与权重/超参数选择的前提下，以Val最优权重仅对Test运行一次预测和项目统一评价，保存到训练输出目录下的`test_predictions.json`和`test_metrics.json`，同时生成`best_checkpoint.txt`。
+- `scripts/run_matrix.py`直接复用训练入口生成的Test预测和指标，避免重复Test。
 
-REAL+SYN及REAL-AUG样本量约两倍，但近似总更新次数相同。各架构保持自己的优化器，横向比较重点是**同一架构内部五组数据来源差异**，不是直接比较不同架构的绝对最优性能。
-
-若使用早停，记录实际训练步数/epoch；REAL+SYN增益不能来自单纯增加训练步数。正式论文建议多随机种子与预注册主指标。
+**重要的对照实验限制：**固定100 Epoch不代表不同训练集拥有相同优化步数，REAL+SYN/REAL-AUG较REAL图像数增加时，梯度更新总数也会增加。正式论文应记录每组实际Epoch/步数，必要时单独设计等步数消融实验，防止训练预算成为混杂因素。
 
 ## 五、评价
 
