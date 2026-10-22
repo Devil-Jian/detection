@@ -229,7 +229,7 @@ liverdet prepare \
   --cases /dataset/downstream_detection/manifests/cases.csv \
   --workdir /dataset/downstream_detection \
   --splits /dataset/downstream_detection/manifests/splits.csv \
-  --hu-min -100 --hu-max 300
+  --hu-min -160 --hu-max 240
 ~~~
 
 运行后：
@@ -242,7 +242,7 @@ liverdet prepare \
   data/real/pvp/P001_pvp_0042.png
 ~~~
 
-PNG统一8位单通道、固定窗口（默认 -100至300 HU）。检测训练时读取灰度并复制到3通道。Mask逐轴向k切片，得到多个2D连通域BBox。注意：**NIfTI数组[x,y,k]在PNG保存前转置为图像[y,x]**。Mask和图像shape/affine不一致时直接中断。
+PNG统一8位单通道、固定窗口（默认 -160至240 HU）。检测训练时读取灰度并复制到3通道。Mask逐轴向k切片，得到多个2D连通域BBox。注意：**NIfTI数组[x,y,k]在PNG保存前转置为图像[y,x]**。Mask和图像shape/affine不一致时直接中断。
 
 **阴性切片**：人工Mask中无病灶的层面，或由trusted_negatives.csv（patient_id,phase,slice_index）明确审过的层面。教师未检出**不等于阴性**。当伪Mask只有阳性时，不会擅自补齐阴性，可用：
 
