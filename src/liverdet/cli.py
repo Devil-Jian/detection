@@ -62,7 +62,7 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--filter-pseudo-liver-mask",action="store_true",
                    help="Optional old workflow ONLY: clip pseudo masks by same-phase liver mask before extracting 2D boxes")
     s.add_argument("--print-train-slices",action="store_true",
-                   help="Print sample_id, original NIfTI path, PNG path and zero-based slice_index for every saved Train slice; always write manifests/train_slices.csv")
+                   help="Print sample_id, original NIfTI path, PNG path and zero-based slice_index for every saved Train slice; always write manifests/train_slices.json")
 
     s=commands.add_parser("match-ncct",help="Local spatial+NMI match, all QC initially pending")
     s.add_argument("--manifest",required=True)
