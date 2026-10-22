@@ -4,8 +4,9 @@ Coordinate convention:
     NIfTI arr[x,y,k] -> PNG arr[x,y,k].T (rows y, columns x).
     XYXY bbox coordinates in PNG pixel space.
 We never interpret missing pseudo detections as verified negatives.
-Only pseudo lesion masks are intersected with same-phase registered liver masks;
-manual ground truth is preserved exactly for validation and test.
+By default, pseudo lesions receive only a small 2D component-area filter.
+Same-phase liver masking is available only with an explicit opt-in.
+Manual ground truth is preserved without component-size filtering.
 """
 from __future__ import annotations
 
@@ -72,12 +73,15 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                    train_fraction: float = .7, val_fraction: float = .15,
                    hu_min: float = -100, hu_max: float = 300,
                    min_component_pixels: int = 4,
-                   trusted_negatives_csv: str | None = None) -> pd.DataFrame:
+                   trusted_negatives_csv: str | None = None,
+                   filter_pseudo_liver_mask: bool = False) -> pd.DataFrame:
     """Write real PNGs and slices.csv; all positive slices; negative only if verified.
 
     trusted_negatives_csv columns: patient_id,phase,slice_index. For manual
     masks empty slices are also accepted as verified negative.
     """
+    if min_component_pixels < 1:
+        raise ValueError("min_component_pixels must be >= 1")
     cases = read_csv(cases_csv, REQUIRED_CASE_COLUMNS)
     if cases.duplicated(["patient_id", "phase"]).any():
         raise ValueError("Duplicate patient-phase in cases.csv")
@@ -96,6 +100,7 @@ def prepare_slices(cases_csv: str, workdir: str, *,
 
     rows = []
     liver_qc_rows = []
+    component_qc_rows = []
     for case in cases.itertuples(index=False):
         case_label = str(case.label_source)
         if case_label not in ("manual", "pseudo", "verified_negative"):
@@ -111,14 +116,14 @@ def prepare_slices(cases_csv: str, workdir: str, *,
         elif case_label != "verified_negative":
             raise ValueError(f"Missing mask not trusted as negative: {case.patient_id}/{case.phase}")
 
-        # The files ap_mask_registered.nii.gz and pvp_mask_registered.nii.gz
-        # are LIVER masks. Never use them as lesion labels. Apply only to
-        # teacher pseudo-labels; preserve manual Val/Test GT unchanged.
+        # Organ masks are NEVER used as lesion ground truth. Liver clipping
+        # is opt-in only; the default keeps all pseudo lesions, regardless
+        # of whether they lie inside a liver segmentation.
         liver = None
         liver_path = Path(case.image_path).parent / f"{case.phase}_mask_registered.nii.gz"
         before_voxels = after_voxels = 0
         before_slices = after_slices = 0
-        if case_label == "pseudo":
+        if case_label == "pseudo" and filter_pseudo_liver_mask:
             if not liver_path.is_file():
                 raise FileNotFoundError(
                     f"Missing {case.phase.upper()} liver mask for pseudo training case "
@@ -132,6 +137,7 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                     f"Liver mask geometry mismatch: {liver_path} vs {case.image_path}"
                 )
 
+        total_components = kept_components = positive_slices_before = positive_slices_after = 0
         for k in range(image.shape[2]):
             lesion_slice = None if mask is None else np.asarray(mask.dataobj[:, :, k]) > 0
             if liver is not None:
@@ -145,8 +151,19 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 lesion_slice = lesion_slice & (liver_data > 0)
                 after_voxels += int(lesion_slice.sum())
                 after_slices += int(lesion_slice.any())
-            boxes = [] if lesion_slice is None else boxes_from_mask(
-                lesion_slice.T, min_component_pixels)
+            if lesion_slice is None or not lesion_slice.any():
+                boxes = []
+            elif case_label == "pseudo":
+                # Only teacher pseudo labels receive an area threshold.
+                # Manual Val/Test lesions must not be discarded, however small.
+                oriented = lesion_slice.T
+                total_components += len(boxes_from_mask(oriented, 1))
+                positive_slices_before += 1
+                boxes = boxes_from_mask(oriented, min_component_pixels)
+                kept_components += len(boxes)
+                positive_slices_after += int(bool(boxes))
+            else:
+                boxes = boxes_from_mask(lesion_slice.T, 1)
             confirmed_negative = (
                 case_label in ("manual", "verified_negative")
                 or (str(case.patient_id), str(case.phase), k) in verified
@@ -167,6 +184,18 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 ncct_slice="", ncct_path="", boxes_ncct="[]", match_nmi="",
                 match_offset_mm="", match_qc="unmatched", syn_path="", boxes_syn="[]"
             ))
+        if case_label == "pseudo":
+            component_qc_rows.append(dict(
+                patient_id=case.patient_id, phase=case.phase, split=case.split,
+                pseudo_mask_path=str(Path(case.mask_path).resolve()),
+                min_component_pixels=min_component_pixels,
+                components_before=total_components,
+                components_kept=kept_components,
+                components_removed=total_components-kept_components,
+                positive_slices_before=positive_slices_before,
+                positive_slices_after=positive_slices_after,
+                liver_filter_enabled=filter_pseudo_liver_mask,
+            ))
         if liver is not None:
             liver_qc_rows.append(dict(
                 patient_id=case.patient_id, phase=case.phase, split=case.split,
@@ -178,6 +207,10 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 positive_slices_before=before_slices,
                 positive_slices_after=after_slices,
             ))
+    if component_qc_rows:
+        qc_path = Path(workdir) / "manifests" / "small_component_filter_qc.csv"
+        save_csv(pd.DataFrame(component_qc_rows), qc_path)
+        print(f"Pseudo-label small-component QC: {qc_path}")
     if liver_qc_rows:
         qc_path = Path(workdir) / "manifests" / "liver_filter_qc.csv"
         save_csv(pd.DataFrame(liver_qc_rows), qc_path)
