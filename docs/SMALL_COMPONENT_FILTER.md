@@ -1,0 +1,68 @@
+# Default pseudo-label filtering: small 2D connected components ONLY
+
+## Default rule
+
+- For label_source=pseudo (Train), read the AP or PVP lesion pseudo NIfTI directly.
+- On each axial slice, compute 8-connected foreground components. Keep components containing at least N actual foreground pixels. N defaults to 4 via --min-component-pixels.
+- No liver-mask intersection or liver-mask file is required in the default workflow.
+- For label_source=manual (Val/Test), retain all lesions, including components smaller than N. Do not modify ground-truth labels.
+- A pseudo slice with no retained boxes is unknown, not a verified negative.
+- Input NIfTI lesion masks are not modified. BBox extraction uses only the surviving 2D components.
+- This is 2D connected-component area, NOT bbox area and NOT 3D voxel count.
+
+## Starting from existing splits on server
+
+    cd /workspace/detection
+    git pull origin main
+    python -m pip install -e .
+
+    BASE=/dataset/downstream_detection
+    OUT=/dataset/downstream_detection_cc4
+
+    liverdet audit \
+      --cases "$BASE/manifests/cases.csv" \
+      --out "$OUT/manifests/nifti_audit.csv" --inspect-masks
+
+    liverdet prepare \
+      --cases "$BASE/manifests/cases.csv" \
+      --splits "$BASE/manifests/splits.csv" \
+      --workdir "$OUT" --min-component-pixels 4
+
+    liverdet export \
+      --manifest "$OUT/manifests/slices.csv" \
+      --out-root "$OUT/exports" --group cect_real --phase ap
+
+    liverdet export \
+      --manifest "$OUT/manifests/slices.csv" \
+      --out-root "$OUT/exports" --group cect_real --phase pvp
+
+Use a NEW workdir to avoid confusing existing liver-filtered manifests and stale liver_filter_qc.csv with this area-only run.
+
+Files to inspect:
+
+    $OUT/manifests/cases_with_splits.csv
+    $OUT/manifests/slices.csv
+    $OUT/manifests/small_component_filter_qc.csv
+    $OUT/data/real/ap/
+    $OUT/data/real/pvp/
+    $OUT/exports/cect_real_ap/counts.csv
+    $OUT/exports/cect_real_pvp/counts.csv
+
+small_component_filter_qc.csv records patient_id, phase, split, pseudo_mask_path, min_component_pixels, components_before, components_kept, components_removed, positive_slices_before, positive_slices_after, liver_filter_enabled.
+
+The cutoff must be tuned against visual QC and manual validation labels; genuinely small lesions may be removed. The original 2D filter uses 8-neighborhood connectivity.
+
+## Historical OPTIONAL liver-mask filter (not the default)
+
+Use these flags ONLY if intentionally reproducing the old clipped-pseudo experiment:
+
+    liverdet audit ... --check-liver-mask
+    liverdet prepare ... --filter-pseudo-liver-mask
+
+Use a separate output directory for any such comparisons.
+
+## Project constraints
+
+- Train contains only pseudo-labeled patients. Val/Test contains only manual GT and is never altered by the pseudo-area cutoff.
+- Keep the patient splits fixed across AP/PVP and the five downstream experiment groups.
+- This stage builds REAL AP/PVP data only. NCCT matching and Syn-CECT model integration remain deferred.
