@@ -74,9 +74,12 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                    hu_min: float = -100, hu_max: float = 300,
                    min_component_pixels: int = 4,
                    trusted_negatives_csv: str | None = None,
-                   filter_pseudo_liver_mask: bool = False) -> pd.DataFrame:
-    """Write real PNGs and slices.csv; all positive slices; negative only if verified.
+                   filter_pseudo_liver_mask: bool = False,
+                   print_train_slices: bool = False) -> pd.DataFrame:
+    """Write PNGs, slices.csv and a dedicated train_slices.csv index.
 
+    Each Train row records sample ID, phase, original NIfTI/mask paths,
+    zero-based slice index, and actual exported full-slice PNG path.
     trusted_negatives_csv columns: patient_id,phase,slice_index. For manual
     masks empty slices are also accepted as verified negative.
     """
@@ -184,6 +187,13 @@ def prepare_slices(cases_csv: str, workdir: str, *,
                 ncct_slice="", ncct_path="", boxes_ncct="[]", match_nmi="",
                 match_offset_mm="", match_qc="unmatched", syn_path="", boxes_syn="[]"
             ))
+            if case.split == "train" and print_train_slices:
+                print(
+                    f"TRAIN_SLICE sample_id={sample_id} phase={case.phase} "
+                    f"slice_index={k} source_volume={Path(case.image_path).resolve()} "
+                    f"real_path={out.resolve()}",
+                    flush=True,
+                )
         if case_label == "pseudo":
             component_qc_rows.append(dict(
                 patient_id=case.patient_id, phase=case.phase, split=case.split,
@@ -220,4 +230,27 @@ def prepare_slices(cases_csv: str, workdir: str, *,
     frame = pd.DataFrame(rows)
     check_no_patient_overlap(frame)
     save_csv(frame, Path(workdir)/"manifests"/"slices.csv")
+
+    # A separate, reproducible index of actual exported TRAIN slices only.
+    # This is generated from the same rows as slices.csv, never from all slices
+    # of the original volumes (unlabeled pseudo slices remain excluded).
+    columns = [
+        "sample_id", "patient_id", "phase", "slice_index",
+        "source_volume", "mask_path", "real_path", "label_source",
+    ]
+    train = frame.loc[frame.split == "train", [c for c in columns if c != "mask_path"]].copy()
+    source_masks = cases.set_index(["patient_id", "phase"])["mask_path"]
+    train["mask_path"] = [
+        source_masks.loc[(r.patient_id, r.phase)] for r in train.itertuples(index=False)
+    ]
+    train = train[columns].sort_values(
+        ["patient_id", "phase", "slice_index", "sample_id"]
+    ).reset_index(drop=True)
+    train_index = Path(workdir) / "manifests" / "train_slices.csv"
+    save_csv(train, train_index)
+    counts = train.phase.value_counts()
+    print(
+        f"Train slice index: {train_index} "
+        f"(total={len(train)}, AP={counts.get('ap', 0)}, PVP={counts.get('pvp', 0)})"
+    )
     return frame

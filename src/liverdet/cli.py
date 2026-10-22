@@ -61,6 +61,8 @@ def configure() -> argparse.ArgumentParser:
                    help="Keep teacher pseudo 2D connected components with at least N pixels (default 4); manual GT is untouched")
     s.add_argument("--filter-pseudo-liver-mask",action="store_true",
                    help="Optional old workflow ONLY: clip pseudo masks by same-phase liver mask before extracting 2D boxes")
+    s.add_argument("--print-train-slices",action="store_true",
+                   help="Print sample_id, original NIfTI path, PNG path and zero-based slice_index for every saved Train slice; always write manifests/train_slices.csv")
 
     s=commands.add_parser("match-ncct",help="Local spatial+NMI match, all QC initially pending")
     s.add_argument("--manifest",required=True)
@@ -164,7 +166,8 @@ def main(argv: list[str] | None=None) -> None:
             trusted_negatives_csv=args.trusted_negatives,seed=args.seed,
             hu_min=args.hu_min,hu_max=args.hu_max,
             min_component_pixels=args.min_component_pixels,
-            filter_pseudo_liver_mask=args.filter_pseudo_liver_mask)
+            filter_pseudo_liver_mask=args.filter_pseudo_liver_mask,
+            print_train_slices=args.print_train_slices)
         print(f"Prepared {len(frame)} verified positive/negative slices.")
     elif args.action=="match-ncct":
         frame=match_ncct(args.manifest,args.workdir,radius_mm=args.radius_mm,
