@@ -71,7 +71,7 @@ def _assign_splits(cases: pd.DataFrame, seed: int, train_fraction: float,
 def prepare_slices(cases_csv: str, workdir: str, *,
                    split_csv: str | None = None, seed: int = 42,
                    train_fraction: float = .7, val_fraction: float = .15,
-                   hu_min: float = -100, hu_max: float = 300,
+                   hu_min: float = -160, hu_max: float = 240,
                    min_component_pixels: int = 4,
                    trusted_negatives_csv: str | None = None,
                    filter_pseudo_liver_mask: bool = False,
@@ -246,8 +246,14 @@ def prepare_slices(cases_csv: str, workdir: str, *,
     train = train[columns].sort_values(
         ["patient_id", "phase", "slice_index", "sample_id"]
     ).reset_index(drop=True)
-    train_index = Path(workdir) / "manifests" / "train_slices.csv"
-    save_csv(train, train_index)
+    train_index = Path(workdir) / "manifests" / "train_slices.json"
+    train_index.parent.mkdir(parents=True, exist_ok=True)
+    # JSON array with one object per actually retained Train slice. Keep
+    # slice_index as a number so downstream consumers need no CSV coercion.
+    train_index.write_text(
+        json.dumps(train.to_dict(orient="records"), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     counts = train.phase.value_counts()
     print(
         f"Train slice index: {train_index} "

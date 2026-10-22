@@ -55,21 +55,21 @@ def configure() -> argparse.ArgumentParser:
     s.add_argument("--splits",help="CSV patient_id,split; strongly recommended")
     s.add_argument("--trusted-negatives",help="CSV patient_id,phase,slice_index")
     s.add_argument("--seed",type=int,default=42)
-    s.add_argument("--hu-min",type=float,default=-100)
-    s.add_argument("--hu-max",type=float,default=300)
+    s.add_argument("--hu-min",type=float,default=-160)
+    s.add_argument("--hu-max",type=float,default=240)
     s.add_argument("--min-component-pixels",type=int,default=4,
                    help="Keep teacher pseudo 2D connected components with at least N pixels (default 4); manual GT is untouched")
     s.add_argument("--filter-pseudo-liver-mask",action="store_true",
                    help="Optional old workflow ONLY: clip pseudo masks by same-phase liver mask before extracting 2D boxes")
     s.add_argument("--print-train-slices",action="store_true",
-                   help="Print sample_id, original NIfTI path, PNG path and zero-based slice_index for every saved Train slice; always write manifests/train_slices.csv")
+                   help="Print sample_id, original NIfTI path, PNG path and zero-based slice_index for every saved Train slice; always write manifests/train_slices.json")
 
     s=commands.add_parser("match-ncct",help="Local spatial+NMI match, all QC initially pending")
     s.add_argument("--manifest",required=True)
     s.add_argument("--workdir",required=True)
     s.add_argument("--radius-mm",type=float,default=15)
-    s.add_argument("--hu-min",type=float,default=-100)
-    s.add_argument("--hu-max",type=float,default=300)
+    s.add_argument("--hu-min",type=float,default=-160)
+    s.add_argument("--hu-max",type=float,default=240)
 
     s=commands.add_parser("review-matches",help="Apply human QC: sample_id,match_qc")
     s.add_argument("--manifest",required=True)
